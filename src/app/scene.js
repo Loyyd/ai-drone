@@ -216,6 +216,7 @@ export function createSceneController({ clamp, config, state, viewport }) {
   let onTargetPreview = () => {};
   const scratchLineStart = new THREE.Vector3();
   const scratchLineEnd = new THREE.Vector3();
+  const propellerBlurTexture = createPropellerBlurTexture();
 
   function setTargetHandlers(handlers) {
     onTargetCommit = handlers.onTargetCommit ?? onTargetCommit;
@@ -249,6 +250,109 @@ export function createSceneController({ clamp, config, state, viewport }) {
     }
 
     line.geometry.setFromPoints(normalizedPoints);
+  }
+
+  function createPropellerBlurTexture() {
+    const canvas = document.createElement("canvas");
+    canvas.width = 256;
+    canvas.height = 256;
+    const context = canvas.getContext("2d");
+
+    if (!context) {
+      return null;
+    }
+
+    const gradient = context.createRadialGradient(128, 128, 12, 128, 128, 122);
+    gradient.addColorStop(0, "rgba(255, 255, 255, 0)");
+    gradient.addColorStop(0.28, "rgba(255, 255, 255, 0)");
+    gradient.addColorStop(0.5, "rgba(210, 220, 235, 0.15)");
+    gradient.addColorStop(0.72, "rgba(155, 170, 195, 0.4)");
+    gradient.addColorStop(0.84, "rgba(105, 120, 145, 0.5)");
+    gradient.addColorStop(0.94, "rgba(255, 255, 255, 0.08)");
+    gradient.addColorStop(1, "rgba(255, 255, 255, 0)");
+
+    context.fillStyle = gradient;
+    context.fillRect(0, 0, 256, 256);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.needsUpdate = true;
+    return texture;
+  }
+
+  function createPropellerBlurMesh(scale = 1) {
+    const material = new THREE.MeshBasicMaterial({
+      alphaMap: propellerBlurTexture,
+      color: "#d7e2f2",
+      depthWrite: false,
+      opacity: 0,
+      side: THREE.DoubleSide,
+      transparent: true
+    });
+    const mesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(1.75 * scale, 1.75 * scale),
+      material
+    );
+    mesh.rotation.y = Math.PI / 2;
+    mesh.renderOrder = 3;
+    mesh.visible = false;
+    return mesh;
+  }
+
+  function attachFrontPointer(drone, scale = 1) {
+    const markerMaterial = new THREE.MeshStandardMaterial({
+      color: "#df3b3b",
+      emissive: "#7a1616",
+      emissiveIntensity: 0.55,
+      metalness: 0.12,
+      roughness: 0.35
+    });
+
+    const pointer = new THREE.Group();
+
+    const stem = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.018 * scale, 0.018 * scale, 0.18 * scale, 12),
+      markerMaterial
+    );
+    stem.rotation.x = Math.PI / 2;
+    stem.position.set(0, 0.16 * scale, 0.56 * scale);
+    stem.castShadow = true;
+    pointer.add(stem);
+
+    const tip = new THREE.Mesh(
+      new THREE.ConeGeometry(0.055 * scale, 0.16 * scale, 16),
+      markerMaterial
+    );
+    tip.rotation.x = Math.PI / 2;
+    tip.position.set(0, 0.16 * scale, 0.72 * scale);
+    tip.castShadow = true;
+    pointer.add(tip);
+
+    drone.add(pointer);
+  }
+
+  function attachPropellerBlur(propeller, host, scale = 1) {
+    const blurMesh = createPropellerBlurMesh(scale);
+    blurMesh.position.copy(propeller.position);
+    host.add(blurMesh);
+    propeller.userData.blurMesh = blurMesh;
+    propeller.userData.blurHost = host;
+  }
+
+  function setObjectOpacity(object, opacity) {
+    object.traverse((child) => {
+      if (!child.isMesh || !child.material) {
+        return;
+      }
+
+      const materials = Array.isArray(child.material)
+        ? child.material
+        : [child.material];
+
+      materials.forEach((material) => {
+        material.transparent = true;
+        material.opacity = opacity;
+      });
+    });
   }
 
   function setupControls() {
@@ -461,12 +565,14 @@ export function createSceneController({ clamp, config, state, viewport }) {
       const prop = propeller();
       prop.position.y = 0.12;
       mount.add(prop);
+      attachPropellerBlur(prop, mount, 0.95);
       drone.add(mount);
 
       return prop;
     });
 
     drone.scale.setScalar(scale);
+    attachFrontPointer(drone, 1);
 
     return { drone, propellers };
   }
@@ -517,7 +623,12 @@ export function createSceneController({ clamp, config, state, viewport }) {
       return bone || new THREE.Group();
     });
 
+    propellers.forEach((propeller) => {
+      attachPropellerBlur(propeller, propeller.parent ?? drone, 0.9);
+    });
+
     drone.scale.setScalar(scale);
+    attachFrontPointer(drone, 0.9);
 
     return { drone, propellers };
   }
@@ -736,10 +847,27 @@ export function createSceneController({ clamp, config, state, viewport }) {
     targetAxisGuides.visible = gizmoVisible;
   }
 
-  function applyPropellerRotation(propellers, propellerSpin) {
+  function applyPropellerRotation(propellers, propellerSpin, motorOutputs = []) {
     propellers.forEach((propeller, index) => {
       propeller.rotation.x =
         propellerSpin[index] * MOTOR_SPIN_DIRECTIONS[index];
+
+      const blurMesh = propeller.userData.blurMesh;
+      if (!blurMesh) {
+        return;
+      }
+
+      const outputRatio = THREE.MathUtils.clamp(
+        (motorOutputs[index] ?? 0) / config.maxMotorThrust,
+        0,
+        1
+      );
+      const blurOpacity = THREE.MathUtils.clamp((outputRatio - 0.12) / 0.88, 0, 1) * 0.82;
+      const bladeOpacity = THREE.MathUtils.lerp(1, 0.18, blurOpacity / 0.82);
+
+      blurMesh.visible = blurOpacity > 0.02;
+      blurMesh.material.opacity = blurOpacity;
+      setObjectOpacity(propeller, bladeOpacity);
     });
   }
 
@@ -786,7 +914,11 @@ export function createSceneController({ clamp, config, state, viewport }) {
         preview.propellerSpin[motorIndex] +=
           (output / config.maxMotorThrust) * 0.6;
       });
-      applyPropellerRotation(preview.propellers, preview.propellerSpin);
+      applyPropellerRotation(
+        preview.propellers,
+        preview.propellerSpin,
+        previewOutputs
+      );
     });
   }
 
@@ -798,7 +930,7 @@ export function createSceneController({ clamp, config, state, viewport }) {
     mainDrone.position.copy(liveDrone.position);
     mainDrone.quaternion.copy(liveDrone.orientation);
 
-    applyPropellerRotation(mainPropellers, propellerSpin);
+    applyPropellerRotation(mainPropellers, propellerSpin, liveDrone.motorOutputs);
   }
 
   function updateCameraFocus(liveDrone) {
