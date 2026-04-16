@@ -1815,9 +1815,9 @@ function animate() {
     state.propellerSpin[index] += 0.32 + (output / config.maxMotorThrust) * 0.9;
   });
 
-  // Apply rotation to propeller bones
+  // Apply rotation to propeller bones (Z-axis)
   state.motorOutputs.forEach((output, index) => {
-    propellers[index].rotation.y = state.propellerSpin[index] * motorSpinDirections[index];
+    propellers[index].rotation.z = state.propellerSpin[index] * motorSpinDirections[index];
   });
 
   const focusPoint = state.liveDrone.position.clone().lerp(config.target, 0.35);
