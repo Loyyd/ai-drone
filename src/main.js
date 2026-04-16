@@ -2,6 +2,7 @@ import "./style.css";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import powerButtonImage from "./assets/power-button.png";
 import propellerImage from "./assets/propeller.png";
 import axisImage from "./assets/axis.png";
@@ -248,15 +249,15 @@ app.innerHTML = `
               <span id="population-value"></span>
             </span>
             <input id="population" type="range" min="1" max="35" step="1" />
-          </label>
+            </label>
 
-          <label class="control">
+            <label class="control">
             <span class="control-label">
               <span>Mutation Scale</span>
               <span id="mutation-scale-value"></span>
             </span>
             <input id="mutation-scale" type="range" min="0.02" max="0.5" step="0.01" />
-          </label>
+            </label>
 
           <label class="control control-span-2">
             <span class="control-label">
@@ -1126,9 +1127,26 @@ sunLight.shadow.camera.top = 12;
 sunLight.shadow.camera.bottom = -12;
 scene.add(sunLight);
 
+const groundCanvas = document.createElement("canvas");
+groundCanvas.width = 512;
+groundCanvas.height = 512;
+const groundCtx = groundCanvas.getContext("2d");
+const groundGradient = groundCtx.createRadialGradient(256, 256, 0, 256, 256, 256);
+groundGradient.addColorStop(0, "#f3f5f8");
+groundGradient.addColorStop(0.75, "#f3f5f8");
+groundGradient.addColorStop(1, "#ffffff");
+groundCtx.fillStyle = groundGradient;
+groundCtx.fillRect(0, 0, 512, 512);
+
+const groundTexture = new THREE.CanvasTexture(groundCanvas);
+
 const ground = new THREE.Mesh(
-  new THREE.PlaneGeometry(34, 34),
-  new THREE.MeshStandardMaterial({ color: "#f3f5f8", roughness: 0.95, metalness: 0.02 })
+  new THREE.PlaneGeometry(45, 45),
+  new THREE.MeshStandardMaterial({
+    map: groundTexture,
+    roughness: 0.9,
+    metalness: 0.01
+  })
 );
 ground.rotation.x = -Math.PI / 2;
 ground.receiveShadow = true;
@@ -1262,29 +1280,27 @@ transformControls.addEventListener("objectChange", () => {
   updateUi();
 });
 
-function createPropeller() {
-  const propeller = new THREE.Group();
+let droneGltf = null;
+const gltfLoader = new GLTFLoader();
 
-  const hub = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.12, 0.12, 0.08, 20),
-    new THREE.MeshStandardMaterial({ color: "#4a5568", roughness: 0.5, metalness: 0.3 })
-  );
-  hub.rotation.x = Math.PI / 2;
-  hub.castShadow = true;
-  propeller.add(hub);
-
-  const bladeGeometry = new THREE.BoxGeometry(0.86, 0.02, 0.12);
-  const bladeMaterial = new THREE.MeshStandardMaterial({ color: "#2d3645", roughness: 0.35, metalness: 0.08 });
-  const bladeA = new THREE.Mesh(bladeGeometry, bladeMaterial);
-  bladeA.castShadow = true;
-  propeller.add(bladeA);
-
-  const bladeB = bladeA.clone();
-  bladeB.rotation.y = Math.PI / 2;
-  propeller.add(bladeB);
-
-  return propeller;
-}
+gltfLoader.load("/drone.glb", (gltf) => {
+  droneGltf = gltf;
+  console.log("✓ Drone model loaded successfully");
+  
+  const foundObjects = [];
+  gltf.scene.traverse((node) => {
+    if (node.name) {
+      foundObjects.push(node.name);
+    }
+  });
+  console.log("Model objects:", foundObjects);
+  
+  if (gltf.animations && gltf.animations.length > 0) {
+    console.log("Model animations:", gltf.animations.map(a => a.name));
+  }
+}, undefined, (error) => {
+  console.error("Failed to load drone model:", error);
+});
 
 function createDrone(options = {}) {
   const {
@@ -1294,8 +1310,92 @@ function createDrone(options = {}) {
     opacity = 1,
     scale = 1
   } = options;
-  const drone = new THREE.Group();
 
+  if (!droneGltf) {
+    console.warn("Drone model not loaded yet, creating fallback drone");
+    return createFallbackDrone(options);
+  }
+
+  const drone = droneGltf.scene.clone();
+  
+  drone.traverse((child) => {
+    if (child.isMesh) {
+      child.castShadow = true;
+      child.receiveShadow = true;
+      
+      if (opacity < 1) {
+        if (Array.isArray(child.material)) {
+          child.material.forEach((mat) => {
+            mat.transparent = true;
+            mat.opacity = opacity;
+          });
+        } else {
+          child.material.transparent = true;
+          child.material.opacity = opacity;
+        }
+      }
+    }
+  });
+
+  const propellerNames = ["front-left", "front-right", "back-left", "back-right"];
+  const propellers = propellerNames.map((name, index) => {
+    const propeller = drone.getObjectByName(name);
+    if (!propeller) {
+      console.warn(`Propeller "${name}" (motor ${index}) not found in model`);
+    }
+    return propeller || new THREE.Group();
+  });
+
+  drone.scale.setScalar(scale);
+
+  return { drone, propellers };
+}
+
+function createFallbackDrone(options = {}) {
+  const {
+    bodyColor = "#e4e9f1",
+    accentColor = "#1e6fd4",
+    armColor = "#8793a6",
+    opacity = 1,
+    scale = 1
+  } = options;
+
+  const propeller = () => {
+    const group = new THREE.Group();
+    const hub = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.12, 0.12, 0.08, 20),
+      new THREE.MeshStandardMaterial({ 
+        color: "#4a5568", 
+        roughness: 0.5, 
+        metalness: 0.3,
+        transparent: opacity < 1,
+        opacity
+      })
+    );
+    hub.rotation.x = Math.PI / 2;
+    hub.castShadow = true;
+    group.add(hub);
+
+    const bladeGeometry = new THREE.BoxGeometry(0.86, 0.02, 0.12);
+    const bladeMaterial = new THREE.MeshStandardMaterial({ 
+      color: "#2d3645", 
+      roughness: 0.35, 
+      metalness: 0.08,
+      transparent: opacity < 1,
+      opacity
+    });
+    const bladeA = new THREE.Mesh(bladeGeometry, bladeMaterial);
+    bladeA.castShadow = true;
+    group.add(bladeA);
+
+    const bladeB = bladeA.clone();
+    bladeB.rotation.y = Math.PI / 2;
+    group.add(bladeB);
+
+    return group;
+  };
+
+  const drone = new THREE.Group();
   const bodyMaterial = new THREE.MeshStandardMaterial({
     color: bodyColor,
     roughness: 0.55,
@@ -1346,12 +1446,12 @@ function createDrone(options = {}) {
     strut.castShadow = true;
     mount.add(strut);
 
-    const propeller = createPropeller();
-    propeller.position.y = 0.12;
-    mount.add(propeller);
+    const prop = propeller();
+    prop.position.y = 0.12;
+    mount.add(prop);
     drone.add(mount);
 
-    return propeller;
+    return prop;
   });
 
   drone.scale.setScalar(scale);
