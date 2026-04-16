@@ -1831,39 +1831,30 @@ function animate() {
   state.motorOutputs.forEach((output, index) => {
     if (!state.dronePowered) {
       state.propellerSpin[index] = 0;
-      // Reset animation time for all propellers
-      if (propellerAnimations) {
-        Object.values(propellerAnimations).forEach(action => {
-          action.time = 0;
-        });
-      } else {
-        propellers[index].rotation.y = 0;
-      }
       return;
     }
 
     state.propellerSpin[index] += 0.32 + (output / config.maxMotorThrust) * 0.9;
-    
-    // If we have animations, use them; otherwise use manual rotation
-    if (propellerAnimations && droneMixer) {
-      const animationNames = ["front-left", "front-right", "back-left", "back-right"];
-      const animName = animationNames[index];
-      if (propellerAnimations[animName]) {
-        const action = propellerAnimations[animName];
-        // Scale animation speed based on motor output (60 frames @ 24fps)
-        // At 0 thrust: 0.1x speed (very slow)
-        // At max thrust: 4x speed (very fast)
+  });
+
+  // Update animation playback speeds based on motor outputs
+  if (propellerAnimations && droneMixer) {
+    const animationNames = ["front-left", "front-right", "back-left", "back-right"];
+    animationNames.forEach((name, index) => {
+      const action = propellerAnimations[name];
+      if (action) {
+        const output = state.motorOutputs[index] || 0;
+        // Speed scales from 0.1x to 4x based on thrust
         const thrustRatio = output / config.maxMotorThrust;
         action.timeScale = 0.1 + thrustRatio * 3.9;
       }
-    } else {
-      propellers[index].rotation.y = state.propellerSpin[index] * motorSpinDirections[index];
-    }
-  });
-
-  // Update animation mixer
-  if (droneMixer) {
+    });
     droneMixer.update(config.liveDt);
+  } else {
+    // Fallback: manual rotation if no animations
+    state.motorOutputs.forEach((output, index) => {
+      propellers[index].rotation.y = state.propellerSpin[index] * motorSpinDirections[index];
+    });
   }
 
   const focusPoint = state.liveDrone.position.clone().lerp(config.target, 0.35);
