@@ -35,6 +35,11 @@ const scene = createSceneController({
   viewport
 });
 const drawLearningChart = createLearningChart(ui);
+const UI_REFRESH_INTERVAL = 1000 / 12;
+
+let lastUiRenderAt = 0;
+let lastChartLength = -1;
+let lastChartTail = Number.NaN;
 
 function renderUi() {
   updateUi({
@@ -46,6 +51,38 @@ function renderUi() {
     updateGizmoVisibility: scene.updateGizmoVisibility,
     viewport
   });
+}
+
+function maybeRenderUi(now) {
+  if (now - lastUiRenderAt < UI_REFRESH_INTERVAL) {
+    return;
+  }
+
+  renderUi();
+  lastUiRenderAt = now;
+}
+
+function syncUi(now = performance.now()) {
+  renderUi();
+  lastUiRenderAt = now;
+}
+
+function maybeDrawLearningChart(force = false) {
+  const nextLength = state.learningHistory.length;
+  const nextTail =
+    nextLength > 0 ? state.learningHistory[nextLength - 1] : Number.NaN;
+
+  if (
+    !force &&
+    nextLength === lastChartLength &&
+    Object.is(nextTail, lastChartTail)
+  ) {
+    return;
+  }
+
+  drawLearningChart(state.learningHistory);
+  lastChartLength = nextLength;
+  lastChartTail = nextTail;
 }
 
 function resetVisibleDrone() {
@@ -91,7 +128,8 @@ function resetLearning() {
   });
   scene.updateTargetVisuals(state.liveDrone);
   syncTargetControls(ui, config);
-  renderUi();
+  syncUi();
+  maybeDrawLearningChart(true);
 }
 
 function setTarget(nextX, nextY, nextZ, shouldReset = false) {
@@ -109,7 +147,7 @@ function setTarget(nextX, nextY, nextZ, shouldReset = false) {
     return;
   }
 
-  renderUi();
+  syncUi();
 }
 
 function randomizeTarget() {
@@ -127,7 +165,7 @@ function toggleTrainingMode() {
   }
 
   state.trainingActive = !state.trainingActive;
-  renderUi();
+  syncUi();
 }
 
 function bindControls() {
@@ -158,7 +196,7 @@ function bindControls() {
     input: ui.inputs.mass,
     onInput: (value) => {
       config.mass = value;
-      renderUi();
+      syncUi();
     },
     value: ui.values.mass,
     valueProvider: () => config.mass
@@ -169,7 +207,7 @@ function bindControls() {
     input: ui.inputs.maxMotorThrust,
     onInput: (value) => {
       config.maxMotorThrust = value;
-      renderUi();
+      syncUi();
     },
     value: ui.values.maxMotorThrust,
     valueProvider: () => config.maxMotorThrust
@@ -180,7 +218,7 @@ function bindControls() {
     input: ui.inputs.linearDamping,
     onInput: (value) => {
       config.linearDamping = value;
-      renderUi();
+      syncUi();
     },
     value: ui.values.linearDamping,
     valueProvider: () => config.linearDamping
@@ -191,7 +229,7 @@ function bindControls() {
     input: ui.inputs.angularDamping,
     onInput: (value) => {
       config.angularDamping = value;
-      renderUi();
+      syncUi();
     },
     value: ui.values.angularDamping,
     valueProvider: () => config.angularDamping
@@ -210,7 +248,7 @@ function bindControls() {
         makeStartOrientation: simulation.makeStartOrientation,
         mutateGenome: simulation.mutateGenome
       });
-      renderUi();
+      syncUi();
     },
     value: ui.values.population,
     valueProvider: () => config.population
@@ -232,7 +270,7 @@ function bindControls() {
     input: ui.inputs.trainingSpeed,
     onInput: (value) => {
       config.trainingSpeed = value;
-      renderUi();
+      syncUi();
     },
     value: ui.values.trainingSpeed,
     valueProvider: () => config.trainingSpeed
@@ -255,7 +293,7 @@ function bindControls() {
 
   ui.gizmoToggle.addEventListener("change", () => {
     state.showTargetGizmo = ui.gizmoToggle.checked;
-    renderUi();
+    syncUi();
   });
 
   ui.resetLearning.addEventListener("click", () => {
@@ -264,7 +302,7 @@ function bindControls() {
 
   ui.resetDrone.addEventListener("click", () => {
     resetVisibleDrone();
-    renderUi();
+    syncUi();
   });
 
   ui.randomTarget.addEventListener("click", () => {
@@ -295,7 +333,7 @@ function bindControls() {
       mutateGenome: simulation.mutateGenome
     });
     scene.updateTargetVisuals(state.liveDrone);
-    renderUi();
+    syncUi();
   });
 }
 
@@ -342,6 +380,7 @@ function resize() {
 
 function animate() {
   requestAnimationFrame(animate);
+  const now = performance.now();
 
   if (state.dronePowered && state.trainingActive && !state.targetDragging) {
     for (let index = 0; index < config.trainingSpeed; index += 1) {
@@ -371,8 +410,8 @@ function animate() {
   scene.updateCameraFocus(state.liveDrone);
   scene.updateTargetVisuals(state.liveDrone);
 
-  renderUi();
-  drawLearningChart(state.learningHistory);
+  maybeRenderUi(now);
+  maybeDrawLearningChart();
   scene.render();
 }
 
@@ -382,7 +421,7 @@ scene.setTargetHandlers({
   },
   onTargetPreview: () => {
     syncTargetControls(ui, config);
-    renderUi();
+    syncUi();
   }
 });
 
@@ -395,7 +434,8 @@ async function start() {
   resetLearning();
   resize();
   scene.updateGizmoVisibility();
-  renderUi();
+  syncUi();
+  maybeDrawLearningChart(true);
   animate();
 }
 
