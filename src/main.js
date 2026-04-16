@@ -1342,37 +1342,19 @@ function createDrone(options = {}) {
     }
   });
 
-  // Set up animation mixer and actions for propellers
-  const mixer = new THREE.AnimationMixer(drone);
-  const propellerAnimations = {};
-  
-  const animationNames = ["front-left", "front-right", "back-left", "back-right"];
-  animationNames.forEach((name) => {
-    const clip = THREE.AnimationClip.findByName(droneGltf.animations, name);
-    if (clip) {
-      const action = mixer.clipAction(clip);
-      action.loop = THREE.LoopRepeat;
-      action.clampWhenFinished = false;
-      action.play();
-      propellerAnimations[name] = action;
-      console.log(`Animation "${name}" loaded: ${clip.duration}s duration`);
-    } else {
-      console.warn(`Animation "${name}" not found in model`);
-    }
-  });
-
+  // Find propeller bones by name
   const propellerNames = ["front-left", "front-right", "back-left", "back-right"];
   const propellers = propellerNames.map((name, index) => {
-    const propeller = drone.getObjectByName(name);
-    if (!propeller) {
-      console.warn(`Propeller "${name}" (motor ${index}) not found in model`);
+    const bone = drone.getObjectByName(name);
+    if (!bone) {
+      console.warn(`Propeller bone "${name}" (motor ${index}) not found in model`);
     }
-    return propeller || new THREE.Group();
+    return bone || new THREE.Group();
   });
 
   drone.scale.setScalar(scale);
 
-  return { drone, propellers, mixer, propellerAnimations, animationNames };
+  return { drone, propellers };
 }
 
 function createFallbackDrone(options = {}) {
@@ -1485,16 +1467,12 @@ function createFallbackDrone(options = {}) {
 
 let drone;
 let propellers;
-let droneMixer;
-let propellerAnimations;
 
 // Wait for model to load before creating initial drone
 modelLoadPromise.then(() => {
   const droneData = createDrone();
   drone = droneData.drone;
   propellers = droneData.propellers;
-  droneMixer = droneData.mixer;
-  propellerAnimations = droneData.propellerAnimations;
   scene.add(drone);
   
   // Now safe to start animation loop
@@ -1837,25 +1815,10 @@ function animate() {
     state.propellerSpin[index] += 0.32 + (output / config.maxMotorThrust) * 0.9;
   });
 
-  // Update animation playback speeds based on motor outputs
-  if (propellerAnimations && droneMixer) {
-    const animationNames = ["front-left", "front-right", "back-left", "back-right"];
-    animationNames.forEach((name, index) => {
-      const action = propellerAnimations[name];
-      if (action) {
-        const output = state.motorOutputs[index] || 0;
-        // Speed scales from 0.1x to 4x based on thrust
-        const thrustRatio = output / config.maxMotorThrust;
-        action.timeScale = 0.1 + thrustRatio * 3.9;
-      }
-    });
-    droneMixer.update(config.liveDt);
-  } else {
-    // Fallback: manual rotation if no animations
-    state.motorOutputs.forEach((output, index) => {
-      propellers[index].rotation.y = state.propellerSpin[index] * motorSpinDirections[index];
-    });
-  }
+  // Apply rotation to propeller bones
+  state.motorOutputs.forEach((output, index) => {
+    propellers[index].rotation.y = state.propellerSpin[index] * motorSpinDirections[index];
+  });
 
   const focusPoint = state.liveDrone.position.clone().lerp(config.target, 0.35);
   controls.target.lerp(focusPoint, 0.06);
