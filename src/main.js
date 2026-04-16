@@ -1342,6 +1342,21 @@ function createDrone(options = {}) {
     }
   });
 
+  // Set up animation mixer and actions for propellers
+  const mixer = new THREE.AnimationMixer(drone);
+  const propellerAnimations = {};
+  
+  const animationNames = ["front-left", "front-right", "back-left", "back-right"];
+  animationNames.forEach((name) => {
+    const clip = THREE.AnimationClip.findByName(droneGltf.animations, name);
+    if (clip) {
+      propellerAnimations[name] = mixer.clipAction(clip);
+      propellerAnimations[name].play();
+    } else {
+      console.warn(`Animation "${name}" not found in model`);
+    }
+  });
+
   const propellerNames = ["front-left", "front-right", "back-left", "back-right"];
   const propellers = propellerNames.map((name, index) => {
     const propeller = drone.getObjectByName(name);
@@ -1353,7 +1368,7 @@ function createDrone(options = {}) {
 
   drone.scale.setScalar(scale);
 
-  return { drone, propellers };
+  return { drone, propellers, mixer, propellerAnimations, animationNames };
 }
 
 function createFallbackDrone(options = {}) {
@@ -1466,12 +1481,16 @@ function createFallbackDrone(options = {}) {
 
 let drone;
 let propellers;
+let droneMixer;
+let propellerAnimations;
 
 // Wait for model to load before creating initial drone
 modelLoadPromise.then(() => {
   const droneData = createDrone();
   drone = droneData.drone;
   propellers = droneData.propellers;
+  droneMixer = droneData.mixer;
+  propellerAnimations = droneData.propellerAnimations;
   scene.add(drone);
   
   // Now safe to start animation loop
@@ -1808,13 +1827,36 @@ function animate() {
   state.motorOutputs.forEach((output, index) => {
     if (!state.dronePowered) {
       state.propellerSpin[index] = 0;
-      propellers[index].rotation.y = 0;
+      // Reset animation time for all propellers
+      if (propellerAnimations) {
+        Object.values(propellerAnimations).forEach(action => {
+          action.time = 0;
+        });
+      } else {
+        propellers[index].rotation.y = 0;
+      }
       return;
     }
 
     state.propellerSpin[index] += 0.32 + (output / config.maxMotorThrust) * 0.9;
-    propellers[index].rotation.y = state.propellerSpin[index] * motorSpinDirections[index];
+    
+    // If we have animations, use them; otherwise use manual rotation
+    if (propellerAnimations && droneMixer) {
+      const animationNames = ["front-left", "front-right", "back-left", "back-right"];
+      const animName = animationNames[index];
+      if (propellerAnimations[animName]) {
+        // Speed up animation based on motor output
+        propellerAnimations[animName].timeScale = 0.5 + (output / config.maxMotorThrust) * 1.5;
+      }
+    } else {
+      propellers[index].rotation.y = state.propellerSpin[index] * motorSpinDirections[index];
+    }
   });
+
+  // Update animation mixer
+  if (droneMixer) {
+    droneMixer.update(config.liveDt);
+  }
 
   const focusPoint = state.liveDrone.position.clone().lerp(config.target, 0.35);
   controls.target.lerp(focusPoint, 0.06);
