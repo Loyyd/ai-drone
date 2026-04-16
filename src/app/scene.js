@@ -1,7 +1,4 @@
 import * as THREE from "three";
-import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
 import { MOTOR_SPIN_DIRECTIONS } from "./constants.js";
 
@@ -16,26 +13,6 @@ export function createSceneController({ clamp, config, state, viewport }) {
 
   const camera = new THREE.PerspectiveCamera(44, 1, 0.1, 100);
   camera.position.set(9, 6.8, 9.5);
-
-  const controls = new OrbitControls(camera, renderer.domElement);
-  controls.enableDamping = true;
-  controls.dampingFactor = 0.07;
-  controls.target.set(0, 2.5, 0);
-  controls.minDistance = 4.5;
-  controls.maxDistance = 24;
-  controls.minPolarAngle = 0.18;
-  controls.maxPolarAngle = Math.PI / 2 - 0.05;
-
-  const transformControls = new TransformControls(camera, renderer.domElement);
-  transformControls.setMode("translate");
-  transformControls.setSpace("world");
-  transformControls.showX = true;
-  transformControls.showY = true;
-  transformControls.showZ = true;
-  transformControls.setSize(0.58);
-
-  const transformHelper = transformControls.getHelper();
-  scene.add(transformHelper);
 
   const ambientLight = new THREE.HemisphereLight("#ffffff", "#cfd9e6", 1.3);
   scene.add(ambientLight);
@@ -223,48 +200,117 @@ export function createSceneController({ clamp, config, state, viewport }) {
   });
   targetGroup.add(targetAxisGuides);
 
-  transformControls.attach(targetGroup);
-
   const previewFleetGroup = new THREE.Group();
   scene.add(previewFleetGroup);
 
+  let controls = null;
+  let transformControls = null;
+  let transformHelper = null;
   let droneGltf = null;
+  let gltfLoader = null;
   let mainDrone = null;
   let mainPropellers = [];
   let onTargetCommit = () => {};
   let onTargetPreview = () => {};
-
-  const gltfLoader = new GLTFLoader();
+  const scratchLineStart = new THREE.Vector3();
+  const scratchLineEnd = new THREE.Vector3();
 
   function setTargetHandlers(handlers) {
     onTargetCommit = handlers.onTargetCommit ?? onTargetCommit;
     onTargetPreview = handlers.onTargetPreview ?? onTargetPreview;
   }
 
-  transformControls.addEventListener("dragging-changed", (event) => {
-    controls.enabled = !event.value;
-    state.targetDragging = event.value;
-
-    if (!event.value) {
-      onTargetCommit(targetGroup.position.clone());
+  function normalizeLinePoints(points) {
+    if (points.length >= 2) {
+      return points;
     }
-  });
 
-  transformControls.addEventListener("objectChange", () => {
-    if (!state.targetDragging) {
+    if (points.length === 1) {
+      scratchLineStart.copy(points[0]);
+      scratchLineEnd.copy(points[0]);
+      return [scratchLineStart, scratchLineEnd];
+    }
+
+    scratchLineStart.set(0, 0, 0);
+    scratchLineEnd.set(0, 0, 0);
+    return [scratchLineStart, scratchLineEnd];
+  }
+
+  function updateLineGeometry(line, points) {
+    const normalizedPoints = normalizeLinePoints(points);
+    const currentCount = line.geometry.getAttribute("position")?.count ?? 0;
+
+    if (currentCount !== normalizedPoints.length) {
+      line.geometry.dispose();
+      line.geometry = new THREE.BufferGeometry().setFromPoints(normalizedPoints);
       return;
     }
 
-    targetGroup.position.set(
-      clamp(targetGroup.position.x, -config.worldRadius, config.worldRadius),
-      clamp(targetGroup.position.y, 1.2, config.ceiling - 0.2),
-      clamp(targetGroup.position.z, -config.worldRadius, config.worldRadius)
-    );
+    line.geometry.setFromPoints(normalizedPoints);
+  }
 
-    config.target.copy(targetGroup.position);
-    updateTargetVisuals(state.liveDrone);
-    onTargetPreview(targetGroup.position.clone());
-  });
+  function setupControls() {
+    transformControls.addEventListener("dragging-changed", (event) => {
+      controls.enabled = !event.value;
+      state.targetDragging = event.value;
+
+      if (!event.value) {
+        onTargetCommit(targetGroup.position.clone());
+      }
+    });
+
+    transformControls.addEventListener("objectChange", () => {
+      if (!state.targetDragging) {
+        return;
+      }
+
+      targetGroup.position.set(
+        clamp(targetGroup.position.x, -config.worldRadius, config.worldRadius),
+        clamp(targetGroup.position.y, 1.2, config.ceiling - 0.2),
+        clamp(targetGroup.position.z, -config.worldRadius, config.worldRadius)
+      );
+
+      config.target.copy(targetGroup.position);
+      updateTargetVisuals(state.liveDrone);
+      onTargetPreview(targetGroup.position.clone());
+    });
+  }
+
+  async function loadThreeExtras() {
+    const [
+      { OrbitControls },
+      { TransformControls },
+      { GLTFLoader }
+    ] = await Promise.all([
+      import("three/examples/jsm/controls/OrbitControls.js"),
+      import("three/examples/jsm/controls/TransformControls.js"),
+      import("three/examples/jsm/loaders/GLTFLoader.js")
+    ]);
+
+    controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.07;
+    controls.target.set(0, 2.5, 0);
+    controls.minDistance = 4.5;
+    controls.maxDistance = 24;
+    controls.minPolarAngle = 0.18;
+    controls.maxPolarAngle = Math.PI / 2 - 0.05;
+
+    transformControls = new TransformControls(camera, renderer.domElement);
+    transformControls.setMode("translate");
+    transformControls.setSpace("world");
+    transformControls.showX = true;
+    transformControls.showY = true;
+    transformControls.showZ = true;
+    transformControls.setSize(0.58);
+    transformControls.attach(targetGroup);
+
+    transformHelper = transformControls.getHelper();
+    scene.add(transformHelper);
+    gltfLoader = new GLTFLoader();
+
+    setupControls();
+  }
 
   function loadDroneModel() {
     return new Promise((resolve, reject) => {
@@ -475,6 +521,8 @@ export function createSceneController({ clamp, config, state, viewport }) {
   }
 
   async function initialize() {
+    await loadThreeExtras();
+
     try {
       await loadDroneModel();
     } catch (error) {
@@ -558,7 +606,7 @@ export function createSceneController({ clamp, config, state, viewport }) {
       preview.group.quaternion.copy(preview.droneState.orientation);
       preview.group.visible = false;
       preview.trailPoints = [];
-      preview.trailLine.geometry.setFromPoints([]);
+      updateLineGeometry(preview.trailLine, preview.trailPoints);
       preview.trailLine.visible = false;
     });
   }
@@ -567,17 +615,14 @@ export function createSceneController({ clamp, config, state, viewport }) {
     if (!liveDrone) {
       state.trailPoints = [];
       state.lastTrailPoint = null;
-      droneTrailLine.geometry.setFromPoints([
-        new THREE.Vector3(),
-        new THREE.Vector3()
-      ]);
+      updateLineGeometry(droneTrailLine, state.trailPoints);
       return;
     }
 
     const startPoint = liveDrone.position.clone();
     state.trailPoints = [startPoint];
     state.lastTrailPoint = startPoint.clone();
-    droneTrailLine.geometry.setFromPoints(state.trailPoints);
+    updateLineGeometry(droneTrailLine, state.trailPoints);
   }
 
   function sampleTrailPoint(liveDrone) {
@@ -602,7 +647,7 @@ export function createSceneController({ clamp, config, state, viewport }) {
     }
 
     state.lastTrailPoint = currentPoint;
-    droneTrailLine.geometry.setFromPoints(state.trailPoints);
+    updateLineGeometry(droneTrailLine, state.trailPoints);
   }
 
   function updateTargetVisuals(liveDrone) {
@@ -624,6 +669,10 @@ export function createSceneController({ clamp, config, state, viewport }) {
 
   function updateGizmoVisibility() {
     const gizmoVisible = state.showTargetGizmo;
+    if (!transformControls || !transformHelper) {
+      return;
+    }
+
     transformControls.enabled = gizmoVisible;
     transformHelper.visible = gizmoVisible;
     targetAxisGuides.visible = gizmoVisible;
@@ -672,7 +721,7 @@ export function createSceneController({ clamp, config, state, viewport }) {
       if (preview.trailPoints.length > 35) {
         preview.trailPoints.shift();
       }
-      preview.trailLine.geometry.setFromPoints(preview.trailPoints);
+      updateLineGeometry(preview.trailLine, preview.trailPoints);
 
       const previewOutputs = preview.droneState.motorOutputs ?? [0, 0, 0, 0];
       previewOutputs.forEach((output, motorIndex) => {
@@ -695,6 +744,10 @@ export function createSceneController({ clamp, config, state, viewport }) {
   }
 
   function updateCameraFocus(liveDrone) {
+    if (!controls) {
+      return;
+    }
+
     if (!liveDrone) {
       controls.update();
       return;

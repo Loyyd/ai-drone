@@ -12,6 +12,22 @@ import {
 import { clamp, gaussianRandom } from "./utils.js";
 
 export function createSimulationEngine({ config, motorOffsets, state }) {
+  const scratchUpWorld = new THREE.Vector3();
+  const scratchInverseOrientation = new THREE.Quaternion();
+  const scratchLocalTargetOffset = new THREE.Vector3();
+  const scratchLocalVelocity = new THREE.Vector3();
+  const scratchUprightLocal = new THREE.Vector3();
+  const scratchLocalAngularVelocity = new THREE.Vector3();
+  const scratchAttitude = new THREE.Euler();
+  const scratchTotalForceWorld = new THREE.Vector3();
+  const scratchAcceleration = new THREE.Vector3();
+  const scratchTorque = new THREE.Vector3();
+  const scratchAngularAcceleration = new THREE.Vector3();
+  const scratchThrustForce = new THREE.Vector3();
+  const scratchDeltaRotation = new THREE.Vector3();
+  const scratchRotationAxis = new THREE.Vector3();
+  const scratchDeltaQuaternion = new THREE.Quaternion();
+
   function createDroneState(overrides = {}) {
     return {
       position:
@@ -61,39 +77,39 @@ export function createSimulationEngine({ config, motorOffsets, state }) {
   }
 
   function getTiltRadians(orientation) {
-    const upWorld = WORLD_UP.clone().applyQuaternion(orientation);
-    return Math.acos(clamp(upWorld.y, -1, 1));
+    scratchUpWorld.copy(WORLD_UP).applyQuaternion(orientation);
+    return Math.acos(clamp(scratchUpWorld.y, -1, 1));
   }
 
   function buildPolicyInputs(droneState) {
-    const inverseOrientation = droneState.orientation.clone().invert();
-    const localTargetOffset = config.target
-      .clone()
+    scratchInverseOrientation.copy(droneState.orientation).invert();
+    scratchLocalTargetOffset
+      .copy(config.target)
       .sub(droneState.position)
-      .applyQuaternion(inverseOrientation)
+      .applyQuaternion(scratchInverseOrientation)
       .multiplyScalar(0.22);
-    const localVelocity = droneState.velocity
-      .clone()
-      .applyQuaternion(inverseOrientation)
+    scratchLocalVelocity
+      .copy(droneState.velocity)
+      .applyQuaternion(scratchInverseOrientation)
       .multiplyScalar(0.18);
-    const uprightLocal = WORLD_UP.clone().applyQuaternion(inverseOrientation);
-    const localAngularVelocity = droneState.angularVelocity
-      .clone()
+    scratchUprightLocal.copy(WORLD_UP).applyQuaternion(scratchInverseOrientation);
+    scratchLocalAngularVelocity
+      .copy(droneState.angularVelocity)
       .multiplyScalar(0.45);
 
     return [
-      clamp(localTargetOffset.x, -1.6, 1.6),
-      clamp(localTargetOffset.y, -1.6, 1.6),
-      clamp(localTargetOffset.z, -1.6, 1.6),
-      clamp(localVelocity.x, -1.5, 1.5),
-      clamp(localVelocity.y, -1.5, 1.5),
-      clamp(localVelocity.z, -1.5, 1.5),
-      clamp(uprightLocal.x, -1, 1),
-      clamp(uprightLocal.y, -1, 1),
-      clamp(uprightLocal.z, -1, 1),
-      clamp(localAngularVelocity.x, -1.4, 1.4),
-      clamp(localAngularVelocity.y, -1.4, 1.4),
-      clamp(localAngularVelocity.z, -1.4, 1.4)
+      clamp(scratchLocalTargetOffset.x, -1.6, 1.6),
+      clamp(scratchLocalTargetOffset.y, -1.6, 1.6),
+      clamp(scratchLocalTargetOffset.z, -1.6, 1.6),
+      clamp(scratchLocalVelocity.x, -1.5, 1.5),
+      clamp(scratchLocalVelocity.y, -1.5, 1.5),
+      clamp(scratchLocalVelocity.z, -1.5, 1.5),
+      clamp(scratchUprightLocal.x, -1, 1),
+      clamp(scratchUprightLocal.y, -1, 1),
+      clamp(scratchUprightLocal.z, -1, 1),
+      clamp(scratchLocalAngularVelocity.x, -1.4, 1.4),
+      clamp(scratchLocalAngularVelocity.y, -1.4, 1.4),
+      clamp(scratchLocalAngularVelocity.z, -1.4, 1.4)
     ];
   }
 
@@ -134,29 +150,26 @@ export function createSimulationEngine({ config, motorOffsets, state }) {
   }
 
   function computeStabilizerMotorOutputs(droneState) {
-    const inverseOrientation = droneState.orientation.clone().invert();
-    const localTargetOffset = config.target
-      .clone()
+    scratchInverseOrientation.copy(droneState.orientation).invert();
+    scratchLocalTargetOffset
+      .copy(config.target)
       .sub(droneState.position)
-      .applyQuaternion(inverseOrientation);
-    const localVelocity = droneState.velocity
-      .clone()
-      .applyQuaternion(inverseOrientation);
-    const attitude = new THREE.Euler().setFromQuaternion(
-      droneState.orientation,
-      "XYZ"
-    );
-    const currentPitch = attitude.x;
-    const currentYaw = attitude.y;
-    const currentRoll = attitude.z;
+      .applyQuaternion(scratchInverseOrientation);
+    scratchLocalVelocity
+      .copy(droneState.velocity)
+      .applyQuaternion(scratchInverseOrientation);
+    scratchAttitude.setFromQuaternion(droneState.orientation, "XYZ");
+    const currentPitch = scratchAttitude.x;
+    const currentYaw = scratchAttitude.y;
+    const currentRoll = scratchAttitude.z;
 
     const desiredPitch = clamp(
-      localTargetOffset.z * 0.11 - localVelocity.z * 0.2,
+      scratchLocalTargetOffset.z * 0.11 - scratchLocalVelocity.z * 0.2,
       -0.35,
       0.35
     );
     const desiredRoll = clamp(
-      -localTargetOffset.x * 0.11 + localVelocity.x * 0.2,
+      -scratchLocalTargetOffset.x * 0.11 + scratchLocalVelocity.x * 0.2,
       -0.35,
       0.35
     );
@@ -178,10 +191,8 @@ export function createSimulationEngine({ config, motorOffsets, state }) {
       -0.5,
       0.5
     );
-    const uprightFactor = Math.max(
-      0.45,
-      WORLD_UP.clone().applyQuaternion(droneState.orientation).y
-    );
+    scratchUpWorld.copy(WORLD_UP).applyQuaternion(droneState.orientation);
+    const uprightFactor = Math.max(0.45, scratchUpWorld.y);
     const desiredVerticalAcceleration =
       (config.target.y - droneState.position.y) * 1.7 -
       droneState.velocity.y * 1.1;
@@ -256,50 +267,61 @@ export function createSimulationEngine({ config, motorOffsets, state }) {
       )
     );
     const totalThrust = motorOutputs.reduce((sum, thrust) => sum + thrust, 0);
-    const totalForceLocal = new THREE.Vector3(0, totalThrust, 0);
-    const totalForceWorld = totalForceLocal
-      .clone()
-      .applyQuaternion(droneState.orientation);
-    const acceleration = totalForceWorld.multiplyScalar(1 / config.mass);
+    scratchTotalForceWorld
+      .set(0, totalThrust, 0)
+      .applyQuaternion(droneState.orientation)
+      .multiplyScalar(1 / config.mass);
+    scratchAcceleration.copy(scratchTotalForceWorld);
 
-    acceleration.y -= config.gravity;
-    acceleration.addScaledVector(droneState.velocity, -config.linearDamping);
+    scratchAcceleration.y -= config.gravity;
+    scratchAcceleration.addScaledVector(
+      droneState.velocity,
+      -config.linearDamping
+    );
 
-    droneState.velocity.addScaledVector(acceleration, dt);
+    droneState.velocity.addScaledVector(scratchAcceleration, dt);
     droneState.position.addScaledVector(droneState.velocity, dt);
 
-    const torque = new THREE.Vector3();
+    scratchTorque.set(0, 0, 0);
 
     for (let index = 0; index < OUTPUT_SIZE; index += 1) {
-      const thrustForce = new THREE.Vector3(0, motorOutputs[index], 0);
-      torque.add(motorOffsets[index].clone().cross(thrustForce));
-      torque.y +=
+      scratchThrustForce.set(0, motorOutputs[index], 0);
+      scratchTorque.add(
+        scratchLocalAngularVelocity
+          .copy(motorOffsets[index])
+          .cross(scratchThrustForce)
+      );
+      scratchTorque.y +=
         MOTOR_SPIN_DIRECTIONS[index] *
         motorOutputs[index] *
         config.yawTorqueFactor;
     }
 
-    const angularAcceleration = new THREE.Vector3(
-      torque.x / INERTIA.x,
-      torque.y / INERTIA.y,
-      torque.z / INERTIA.z
+    scratchAngularAcceleration.set(
+      scratchTorque.x / INERTIA.x,
+      scratchTorque.y / INERTIA.y,
+      scratchTorque.z / INERTIA.z
     );
-    angularAcceleration.addScaledVector(
+    scratchAngularAcceleration.addScaledVector(
       droneState.angularVelocity,
       -config.angularDamping
     );
 
-    droneState.angularVelocity.addScaledVector(angularAcceleration, dt);
+    droneState.angularVelocity.addScaledVector(
+      scratchAngularAcceleration,
+      dt
+    );
 
-    const deltaRotation = droneState.angularVelocity.clone().multiplyScalar(dt);
-    const deltaAngle = deltaRotation.length();
+    scratchDeltaRotation.copy(droneState.angularVelocity).multiplyScalar(dt);
+    const deltaAngle = scratchDeltaRotation.length();
 
     if (deltaAngle > 0.000001) {
-      const deltaQuaternion = new THREE.Quaternion().setFromAxisAngle(
-        deltaRotation.normalize(),
+      scratchRotationAxis.copy(scratchDeltaRotation).normalize();
+      scratchDeltaQuaternion.setFromAxisAngle(
+        scratchRotationAxis,
         deltaAngle
       );
-      droneState.orientation.multiply(deltaQuaternion).normalize();
+      droneState.orientation.multiply(scratchDeltaQuaternion).normalize();
     }
 
     let crashed = false;
@@ -335,7 +357,7 @@ export function createSimulationEngine({ config, motorOffsets, state }) {
     return {
       crashed,
       totalThrust,
-      ...evaluateStepReward(droneState, acceleration),
+      ...evaluateStepReward(droneState, scratchAcceleration),
       motorOutputs
     };
   }
