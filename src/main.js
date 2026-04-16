@@ -3,6 +3,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
 import powerButtonImage from "../power-button.png";
+import propellerImage from "../propeller.png";
 
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 const DRONE_BASE_OFFSET = 0.42;
@@ -131,20 +132,28 @@ app.innerHTML = `
         <h3>Motor Thrust</h3>
         <div class="motor-grid">
           <div class="motor-card">
-            <div class="motor-topline"><span>Front Left</span><span id="motor-0-value">0%</span></div>
+            <div class="motor-name">Front Left</div>
+            <div class="motor-value" id="motor-0-value">0%</div>
             <div class="motor-bar"><div class="motor-fill" id="motor-0-fill"></div></div>
+            <img class="motor-propeller" src="${propellerImage}" alt="Front left propeller" />
           </div>
           <div class="motor-card">
-            <div class="motor-topline"><span>Front Right</span><span id="motor-1-value">0%</span></div>
+            <div class="motor-name">Front Right</div>
+            <div class="motor-value" id="motor-1-value">0%</div>
             <div class="motor-bar"><div class="motor-fill" id="motor-1-fill"></div></div>
+            <img class="motor-propeller" src="${propellerImage}" alt="Front right propeller" />
           </div>
           <div class="motor-card">
-            <div class="motor-topline"><span>Rear Left</span><span id="motor-2-value">0%</span></div>
+            <div class="motor-name">Rear Left</div>
+            <div class="motor-value" id="motor-2-value">0%</div>
             <div class="motor-bar"><div class="motor-fill" id="motor-2-fill"></div></div>
+            <img class="motor-propeller" src="${propellerImage}" alt="Rear left propeller" />
           </div>
           <div class="motor-card">
-            <div class="motor-topline"><span>Rear Right</span><span id="motor-3-value">0%</span></div>
+            <div class="motor-name">Rear Right</div>
+            <div class="motor-value" id="motor-3-value">0%</div>
             <div class="motor-bar"><div class="motor-fill" id="motor-3-fill"></div></div>
+            <img class="motor-propeller" src="${propellerImage}" alt="Rear right propeller" />
           </div>
         </div>
         </section>
@@ -373,7 +382,7 @@ const state = {
   hudDragging: false,
   hudDragPointerId: null,
   hudDragOffset: { x: 0, y: 0 },
-  panelWidth: 312,
+  panelWidth: 376,
   panelResizing: false,
   panelResizePointerId: null
 };
@@ -1075,8 +1084,9 @@ transformControls.setSpace("world");
 transformControls.showX = true;
 transformControls.showY = true;
 transformControls.showZ = true;
-transformControls.setSize(1.18);
-scene.add(transformControls);
+transformControls.setSize(0.58);
+const transformHelper = transformControls.getHelper();
+scene.add(transformHelper);
 
 const ambientLight = new THREE.HemisphereLight("#ffffff", "#cfd9e6", 1.3);
 scene.add(ambientLight);
@@ -1157,6 +1167,47 @@ const targetHalo = new THREE.Mesh(
 );
 targetHalo.rotation.x = -Math.PI / 2;
 targetGroup.add(targetHalo);
+
+function createTargetAxisGuide(color, axis) {
+  const guide = new THREE.Group();
+  const material = new THREE.MeshBasicMaterial({ color, toneMapped: false });
+
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.42, 10), material);
+  shaft.position.y = 0.21;
+
+  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.12, 14), material);
+  tip.position.y = 0.47;
+
+  guide.add(shaft);
+  guide.add(tip);
+
+  if (axis === "x") {
+    guide.rotation.z = -Math.PI / 2;
+  } else if (axis === "z") {
+    guide.rotation.x = Math.PI / 2;
+  }
+
+  return guide;
+}
+
+const targetAxisGuides = new THREE.Group();
+targetAxisGuides.add(createTargetAxisGuide("#e14b52", "x"));
+targetAxisGuides.add(createTargetAxisGuide("#23a55a", "y"));
+targetAxisGuides.add(createTargetAxisGuide("#2f7ef5", "z"));
+targetAxisGuides.traverse((child) => {
+  if (!child.material) {
+    return;
+  }
+
+  child.renderOrder = 998;
+
+  const materials = Array.isArray(child.material) ? child.material : [child.material];
+  materials.forEach((material) => {
+    material.depthTest = false;
+    material.depthWrite = false;
+  });
+});
+targetGroup.add(targetAxisGuides);
 
 transformControls.attach(targetGroup);
 
@@ -1382,6 +1433,13 @@ function updateTargetVisuals() {
   }
 }
 
+function updateGizmoVisibility() {
+  const gizmoVisible = !state.dronePowered || state.trainingActive;
+  transformControls.enabled = gizmoVisible;
+  transformHelper.visible = gizmoVisible;
+  targetAxisGuides.visible = gizmoVisible;
+}
+
 function updateUi() {
   const liveDrone = state.liveDrone;
   const positionText = liveDrone
@@ -1406,6 +1464,7 @@ function updateUi() {
   ui.trainingStatus.dataset.running = String(state.dronePowered && state.trainingActive);
   ui.toggleTraining.textContent = !state.dronePowered ? "Power To Train" : state.trainingActive ? "Pause Training" : "Resume Training";
   ui.toggleTraining.disabled = !state.dronePowered;
+  updateGizmoVisibility();
 
   ui.generation.textContent = state.generation.toLocaleString();
   ui.score.textContent = state.bestScore.toFixed(2);
@@ -1419,7 +1478,7 @@ function updateUi() {
   state.motorOutputs.forEach((output, index) => {
     const ratio = clamp(output / config.maxMotorThrust, 0, 1);
     ui.motors[index].value.textContent = `${Math.round(ratio * 100)}%`;
-    ui.motors[index].fill.style.width = `${ratio * 100}%`;
+    ui.motors[index].fill.style.height = `${ratio * 100}%`;
   });
 
   if (state.learningHistory.length > 0) {
@@ -1588,4 +1647,5 @@ function animate() {
 
 resetLearning();
 resize();
+updateGizmoVisibility();
 animate();
