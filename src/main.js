@@ -1850,11 +1850,11 @@ function animate() {
       const animName = animationNames[index];
       if (propellerAnimations[animName]) {
         const action = propellerAnimations[animName];
-        // Scale animation speed based on motor output
-        // At 0 thrust: 0.5x speed (slow cycle through 60 frames)
-        // At max thrust: 2x speed (fast cycle through 60 frames)
+        // Scale animation speed based on motor output (60 frames @ 24fps)
+        // At 0 thrust: 0.1x speed (very slow)
+        // At max thrust: 4x speed (very fast)
         const thrustRatio = output / config.maxMotorThrust;
-        action.timeScale = 0.5 + thrustRatio * 1.5;
+        action.timeScale = 0.1 + thrustRatio * 3.9;
       }
     } else {
       propellers[index].rotation.y = state.propellerSpin[index] * motorSpinDirections[index];
