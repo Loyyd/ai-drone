@@ -2,8 +2,9 @@ import "./style.css";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
-import powerButtonImage from "../power-button.png";
-import propellerImage from "../propeller.png";
+import powerButtonImage from "./assets/power-button.png";
+import propellerImage from "./assets/propeller.png";
+import axisImage from "./assets/axis.png";
 
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 const DRONE_BASE_OFFSET = 0.42;
@@ -32,6 +33,16 @@ app.innerHTML = `
 
       <button class="mode-switch" id="mode-switch" type="button" aria-pressed="true">
         Training Mode
+      </button>
+
+      <button
+        class="gizmo-toggle"
+        id="gizmo-toggle"
+        type="button"
+        aria-pressed="true"
+        style="--axis-toggle-image: url('${axisImage}')"
+      >
+        <span class="gizmo-toggle-icon" aria-hidden="true"></span>
       </button>
 
       <div class="overlay-card hud-card" id="hud-card">
@@ -69,47 +80,30 @@ app.innerHTML = `
         <div class="panel-heading">
           <h2>Navigation Lab</h2>
           <p class="panel-intro">
-            Drag the glowing waypoint in the scene or use the sliders for exact 3D
-            target coordinates.
+            Drag the glowing waypoint in the scene to place the 3D target.
           </p>
         </div>
       </div>
-        <div class="badge-row">
-          <span class="badge">Inputs: target offset, velocity, tilt, spin</span>
-          <span class="badge">Outputs: 4 motor thrusts</span>
-        </div>
-
         <section class="panel-section">
         <h3>Target</h3>
         <p class="target-note">
           Orbit with the mouse. Drag the axis gizmo on the target to move it in
           3D space.
         </p>
-        <div class="target-readout" id="target-readout">Target: 0.0, 0.0, 0.0</div>
-
-        <label class="control">
-          <span class="control-label">
-            <span>Target X</span>
-            <span id="target-x-value"></span>
-          </span>
-          <input id="target-x" type="range" min="-6" max="6" step="0.1" />
-        </label>
-
-        <label class="control">
-          <span class="control-label">
-            <span>Target Y</span>
-            <span id="target-y-value"></span>
-          </span>
-          <input id="target-y" type="range" min="1.2" max="8.5" step="0.1" />
-        </label>
-
-        <label class="control">
-          <span class="control-label">
-            <span>Target Z</span>
-            <span id="target-z-value"></span>
-          </span>
-          <input id="target-z" type="range" min="-6" max="6" step="0.1" />
-        </label>
+        <div class="target-fields" id="target-readout" aria-label="Target coordinates">
+          <label class="target-field">
+            <span class="target-field-label">X</span>
+            <input id="target-x" type="number" min="-6" max="6" step="0.1" />
+          </label>
+          <label class="target-field">
+            <span class="target-field-label">Y</span>
+            <input id="target-y" type="number" min="1.2" max="8.5" step="0.1" />
+          </label>
+          <label class="target-field">
+            <span class="target-field-label">Z</span>
+            <input id="target-z" type="number" min="-6" max="6" step="0.1" />
+          </label>
+        </div>
 
         <div class="button-row">
           <button class="primary" id="random-target">Random Target</button>
@@ -253,11 +247,6 @@ app.innerHTML = `
           <button id="retarget-camera">Recenter Camera</button>
         </div>
         </section>
-
-        <p class="footnote">
-          Every target or physics change restarts evolution so the policy can
-          learn a new flight solution for that waypoint.
-        </p>
     </aside>
   </div>
 `;
@@ -268,6 +257,7 @@ const appShell = document.querySelector(".app-shell");
 const ui = {
   powerButton: document.querySelector("#power-button"),
   modeSwitch: document.querySelector("#mode-switch"),
+  gizmoToggle: document.querySelector("#gizmo-toggle"),
   hudCard: document.querySelector("#hud-card"),
   hudDragHandle: document.querySelector("#hud-drag-handle"),
   panelResizer: document.querySelector("#panel-resizer"),
@@ -309,9 +299,6 @@ const ui = {
     trainingSpeed: document.querySelector("#training-speed")
   },
   values: {
-    targetX: document.querySelector("#target-x-value"),
-    targetY: document.querySelector("#target-y-value"),
-    targetZ: document.querySelector("#target-z-value"),
     episodeDuration: document.querySelector("#episode-duration-value"),
     startSpread: document.querySelector("#start-spread-value"),
     mass: document.querySelector("#mass-value"),
@@ -378,6 +365,7 @@ const state = {
   previewFleet: [],
   trailPoints: [],
   lastTrailPoint: null,
+  showTargetGizmo: true,
   hudPosition: { left: 12, top: 12 },
   hudDragging: false,
   hudDragPointerId: null,
@@ -923,10 +911,6 @@ function syncTargetControls() {
   ui.inputs.targetX.value = config.target.x.toFixed(1);
   ui.inputs.targetY.value = config.target.y.toFixed(1);
   ui.inputs.targetZ.value = config.target.z.toFixed(1);
-  ui.values.targetX.textContent = `${config.target.x.toFixed(1)} m`;
-  ui.values.targetY.textContent = `${config.target.y.toFixed(1)} m`;
-  ui.values.targetZ.textContent = `${config.target.z.toFixed(1)} m`;
-  ui.targetReadout.textContent = `Target: ${config.target.x.toFixed(1)}, ${config.target.y.toFixed(1)}, ${config.target.z.toFixed(1)}`;
 }
 
 function randomizeTarget() {
@@ -956,24 +940,27 @@ function bindNumericControl(input, value, key, formatter, shouldReset = true) {
 
 bindNumericControl(ui.inputs.episodeDuration, ui.values.episodeDuration, "episodeDuration", (value) => `${value.toFixed(1)} s`);
 bindNumericControl(ui.inputs.startSpread, ui.values.startSpread, "startSpread", (value) => `${value.toFixed(1)} m`);
-bindNumericControl(ui.inputs.mass, ui.values.mass, "mass", (value) => `${value.toFixed(2)} kg`);
+bindNumericControl(ui.inputs.mass, ui.values.mass, "mass", (value) => `${value.toFixed(2)} kg`, false);
 bindNumericControl(
   ui.inputs.maxMotorThrust,
   ui.values.maxMotorThrust,
   "maxMotorThrust",
-  (value) => `${value.toFixed(1)} N`
+  (value) => `${value.toFixed(1)} N`,
+  false
 );
 bindNumericControl(
   ui.inputs.linearDamping,
   ui.values.linearDamping,
   "linearDamping",
-  (value) => value.toFixed(2)
+  (value) => value.toFixed(2),
+  false
 );
 bindNumericControl(
   ui.inputs.angularDamping,
   ui.values.angularDamping,
   "angularDamping",
-  (value) => value.toFixed(2)
+  (value) => value.toFixed(2),
+  false
 );
 bindNumericControl(ui.inputs.population, ui.values.population, "population", (value) => `${value}`, false);
 bindNumericControl(
@@ -1017,6 +1004,11 @@ ui.modeSwitch.addEventListener("click", () => {
   }
 
   state.trainingActive = !state.trainingActive;
+  updateUi();
+});
+
+ui.gizmoToggle.addEventListener("click", () => {
+  state.showTargetGizmo = !state.showTargetGizmo;
   updateUi();
 });
 
@@ -1434,7 +1426,7 @@ function updateTargetVisuals() {
 }
 
 function updateGizmoVisibility() {
-  const gizmoVisible = !state.dronePowered || state.trainingActive;
+  const gizmoVisible = state.showTargetGizmo;
   transformControls.enabled = gizmoVisible;
   transformHelper.visible = gizmoVisible;
   targetAxisGuides.visible = gizmoVisible;
@@ -1460,6 +1452,8 @@ function updateUi() {
     : state.trainingActive
       ? "Training Mode"
       : "Simulation Mode";
+  ui.gizmoToggle.classList.toggle("is-active", state.showTargetGizmo);
+  ui.gizmoToggle.setAttribute("aria-pressed", String(state.showTargetGizmo));
   ui.trainingStatus.textContent = !state.dronePowered ? "Off" : state.trainingActive ? "Training" : "Cruising";
   ui.trainingStatus.dataset.running = String(state.dronePowered && state.trainingActive);
   ui.toggleTraining.textContent = !state.dronePowered ? "Power To Train" : state.trainingActive ? "Pause Training" : "Resume Training";
@@ -1477,8 +1471,13 @@ function updateUi() {
 
   state.motorOutputs.forEach((output, index) => {
     const ratio = clamp(output / config.maxMotorThrust, 0, 1);
+    const hue = 210 - ratio * 210;
+    const topColor = `hsl(${hue} 88% 74%)`;
+    const bottomColor = `hsl(${hue} 82% 46%)`;
     ui.motors[index].value.textContent = `${Math.round(ratio * 100)}%`;
     ui.motors[index].fill.style.height = `${ratio * 100}%`;
+    ui.motors[index].fill.style.setProperty("--motor-fill-top", topColor);
+    ui.motors[index].fill.style.setProperty("--motor-fill-bottom", bottomColor);
   });
 
   if (state.learningHistory.length > 0) {
