@@ -63,8 +63,9 @@ export function createSceneController({ clamp, config, state, viewport }) {
     256
   );
   groundGradient.addColorStop(0, "#f3f5f8");
-  groundGradient.addColorStop(0.75, "#f3f5f8");
-  groundGradient.addColorStop(1, "#ffffff");
+  groundGradient.addColorStop(0.68, "#f3f5f8");
+  groundGradient.addColorStop(0.9, "rgba(255, 255, 255, 0.45)");
+  groundGradient.addColorStop(1, "rgba(255, 255, 255, 0)");
   groundCtx.fillStyle = groundGradient;
   groundCtx.fillRect(0, 0, 512, 512);
 
@@ -75,22 +76,23 @@ export function createSceneController({ clamp, config, state, viewport }) {
     new THREE.MeshStandardMaterial({
       map: groundTexture,
       roughness: 0.9,
-      metalness: 0.01
+      metalness: 0.01,
+      transparent: true
     })
   );
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
   scene.add(ground);
 
-  const grid = new THREE.GridHelper(20, 20, "#d5dbe4", "#edf1f6");
+  const grid = new THREE.GridHelper(20, 20, "#8ea3bd", "#bccde0");
   grid.position.y = 0.001;
   scene.add(grid);
 
   const worldDisc = new THREE.Mesh(
     new THREE.RingGeometry(config.worldRadius - 0.04, config.worldRadius + 0.04, 120),
     new THREE.MeshBasicMaterial({
-      color: "#dce6f5",
-      opacity: 0.8,
+      color: "#b8d2f0",
+      opacity: 0.98,
       side: THREE.DoubleSide,
       transparent: true
     })
@@ -627,6 +629,13 @@ export function createSceneController({ clamp, config, state, viewport }) {
     targetAxisGuides.visible = gizmoVisible;
   }
 
+  function applyPropellerRotation(propellers, propellerSpin) {
+    propellers.forEach((propeller, index) => {
+      propeller.rotation.x =
+        propellerSpin[index] * MOTOR_SPIN_DIRECTIONS[index];
+    });
+  }
+
   function stepPreviewFleet({
     createDroneState,
     dt,
@@ -668,11 +677,9 @@ export function createSceneController({ clamp, config, state, viewport }) {
       const previewOutputs = preview.droneState.motorOutputs ?? [0, 0, 0, 0];
       previewOutputs.forEach((output, motorIndex) => {
         preview.propellerSpin[motorIndex] +=
-          0.18 + (output / config.maxMotorThrust) * 0.42;
-        preview.propellers[motorIndex].rotation.y =
-          preview.propellerSpin[motorIndex] *
-          MOTOR_SPIN_DIRECTIONS[motorIndex];
+          (output / config.maxMotorThrust) * 0.6;
       });
+      applyPropellerRotation(preview.propellers, preview.propellerSpin);
     });
   }
 
@@ -684,10 +691,7 @@ export function createSceneController({ clamp, config, state, viewport }) {
     mainDrone.position.copy(liveDrone.position);
     mainDrone.quaternion.copy(liveDrone.orientation);
 
-    mainPropellers.forEach((propeller, index) => {
-      propeller.rotation.x =
-        propellerSpin[index] * MOTOR_SPIN_DIRECTIONS[index];
-    });
+    applyPropellerRotation(mainPropellers, propellerSpin);
   }
 
   function updateCameraFocus(liveDrone) {

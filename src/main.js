@@ -364,7 +364,7 @@ function animate() {
       return;
     }
 
-    state.propellerSpin[index] += 0.32 + (output / config.maxMotorThrust) * 0.9;
+    state.propellerSpin[index] += (output / config.maxMotorThrust) * 1.22;
   });
 
   scene.updateLiveDroneVisual(state.liveDrone, state.propellerSpin);
