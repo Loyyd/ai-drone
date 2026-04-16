@@ -1350,8 +1350,12 @@ function createDrone(options = {}) {
   animationNames.forEach((name) => {
     const clip = THREE.AnimationClip.findByName(droneGltf.animations, name);
     if (clip) {
-      propellerAnimations[name] = mixer.clipAction(clip);
-      propellerAnimations[name].play();
+      const action = mixer.clipAction(clip);
+      action.loop = THREE.LoopRepeat;
+      action.clampWhenFinished = false;
+      action.play();
+      propellerAnimations[name] = action;
+      console.log(`Animation "${name}" loaded: ${clip.duration}s duration`);
     } else {
       console.warn(`Animation "${name}" not found in model`);
     }
@@ -1845,8 +1849,12 @@ function animate() {
       const animationNames = ["front-left", "front-right", "back-left", "back-right"];
       const animName = animationNames[index];
       if (propellerAnimations[animName]) {
-        // Speed up animation based on motor output
-        propellerAnimations[animName].timeScale = 0.5 + (output / config.maxMotorThrust) * 1.5;
+        const action = propellerAnimations[animName];
+        // Scale animation speed based on motor output
+        // At 0 thrust: 0.5x speed (slow cycle through 60 frames)
+        // At max thrust: 2x speed (fast cycle through 60 frames)
+        const thrustRatio = output / config.maxMotorThrust;
+        action.timeScale = 0.5 + thrustRatio * 1.5;
       }
     } else {
       propellers[index].rotation.y = state.propellerSpin[index] * motorSpinDirections[index];
