@@ -1283,23 +1283,28 @@ transformControls.addEventListener("objectChange", () => {
 let droneGltf = null;
 const gltfLoader = new GLTFLoader();
 
-gltfLoader.load("/drone.glb", (gltf) => {
-  droneGltf = gltf;
-  console.log("✓ Drone model loaded successfully");
-  
-  const foundObjects = [];
-  gltf.scene.traverse((node) => {
-    if (node.name) {
-      foundObjects.push(node.name);
+const modelLoadPromise = new Promise((resolve, reject) => {
+  gltfLoader.load("/drone.glb", (gltf) => {
+    droneGltf = gltf;
+    console.log("✓ Drone model loaded successfully");
+    
+    const foundObjects = [];
+    gltf.scene.traverse((node) => {
+      if (node.name) {
+        foundObjects.push(node.name);
+      }
+    });
+    console.log("Model objects:", foundObjects);
+    
+    if (gltf.animations && gltf.animations.length > 0) {
+      console.log("Model animations:", gltf.animations.map(a => a.name));
     }
+    
+    resolve(gltf);
+  }, undefined, (error) => {
+    console.error("Failed to load drone model:", error);
+    reject(error);
   });
-  console.log("Model objects:", foundObjects);
-  
-  if (gltf.animations && gltf.animations.length > 0) {
-    console.log("Model animations:", gltf.animations.map(a => a.name));
-  }
-}, undefined, (error) => {
-  console.error("Failed to load drone model:", error);
 });
 
 function createDrone(options = {}) {
@@ -1459,8 +1464,34 @@ function createFallbackDrone(options = {}) {
   return { drone, propellers };
 }
 
-const { drone, propellers } = createDrone();
-scene.add(drone);
+let drone;
+let propellers;
+
+// Wait for model to load before creating initial drone
+modelLoadPromise.then(() => {
+  const droneData = createDrone();
+  drone = droneData.drone;
+  propellers = droneData.propellers;
+  scene.add(drone);
+  
+  // Now safe to start animation loop
+  resetLearning();
+  resize();
+  updateGizmoVisibility();
+  animate();
+}).catch((error) => {
+  console.error("Failed to initialize due to model loading error:", error);
+  // Still initialize with fallback drone
+  const droneData = createDrone();
+  drone = droneData.drone;
+  propellers = droneData.propellers;
+  scene.add(drone);
+  
+  resetLearning();
+  resize();
+  updateGizmoVisibility();
+  animate();
+});
 
 const previewFleetGroup = new THREE.Group();
 scene.add(previewFleetGroup);
@@ -1795,7 +1826,4 @@ function animate() {
   renderer.render(scene, camera);
 }
 
-resetLearning();
-resize();
-updateGizmoVisibility();
-animate();
+
