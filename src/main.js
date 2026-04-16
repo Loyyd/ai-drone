@@ -5,6 +5,7 @@ import { TransformControls } from "three/examples/jsm/controls/TransformControls
 import powerButtonImage from "./assets/power-button.png";
 import propellerImage from "./assets/propeller.png";
 import axisImage from "./assets/axis.png";
+import droneImage from "../drone.png";
 
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 const DRONE_BASE_OFFSET = 0.42;
@@ -17,6 +18,36 @@ const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const sigmoid = (value) => 1 / (1 + Math.exp(-value));
 
 const app = document.querySelector("#app");
+const favicon = document.querySelector("link[rel='icon']") ?? document.createElement("link");
+
+favicon.rel = "icon";
+favicon.type = "image/png";
+favicon.href = droneImage;
+document.head.appendChild(favicon);
+
+function tintImageToAccent(imageUrl, color) {
+  const image = new Image();
+  image.crossOrigin = "anonymous";
+
+  image.onload = () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
+
+    const context = canvas.getContext("2d");
+    if (!context) {
+      return;
+    }
+
+    context.drawImage(image, 0, 0);
+    context.globalCompositeOperation = "source-in";
+    context.fillStyle = color;
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    favicon.href = canvas.toDataURL("image/png");
+  };
+
+  image.src = imageUrl;
+}
 
 app.innerHTML = `
   <div class="app-shell">
@@ -35,15 +66,10 @@ app.innerHTML = `
         Training Mode
       </button>
 
-      <button
-        class="gizmo-toggle"
-        id="gizmo-toggle"
-        type="button"
-        aria-pressed="true"
-        style="--axis-toggle-image: url('${axisImage}')"
-      >
+      <label class="gizmo-toggle" for="gizmo-toggle" style="--axis-toggle-image: url('${axisImage}')">
+        <input class="gizmo-toggle-checkbox" id="gizmo-toggle" type="checkbox" checked />
         <span class="gizmo-toggle-icon" aria-hidden="true"></span>
-      </button>
+      </label>
 
       <div class="overlay-card hud-card" id="hud-card">
         <div class="hud-header hud-drag-handle" id="hud-drag-handle">
@@ -78,6 +104,10 @@ app.innerHTML = `
     <aside class="panel" id="panel">
       <div class="panel-topbar">
         <div class="panel-heading">
+          <div class="panel-brand">
+            <img class="panel-brand-image" src="${droneImage}" alt="Drone" />
+            <span class="panel-brand-badge">AI Drone</span>
+          </div>
           <h2>Navigation Lab</h2>
           <p class="panel-intro">
             Drag the glowing waypoint in the scene to place the 3D target.
@@ -85,11 +115,10 @@ app.innerHTML = `
         </div>
       </div>
         <section class="panel-section">
-        <h3>Target</h3>
-        <p class="target-note">
-          Orbit with the mouse. Drag the axis gizmo on the target to move it in
-          3D space.
-        </p>
+        <div class="panel-section-header">
+          <h3>Target</h3>
+          <img class="header-icon" src="${axisImage}" alt="" />
+        </div>
         <div class="target-fields" id="target-readout" aria-label="Target coordinates">
           <label class="target-field">
             <span class="target-field-label">X</span>
@@ -218,7 +247,7 @@ app.innerHTML = `
               <span>Population</span>
               <span id="population-value"></span>
             </span>
-            <input id="population" type="range" min="10" max="36" step="1" />
+            <input id="population" type="range" min="1" max="35" step="1" />
           </label>
 
           <label class="control">
@@ -226,7 +255,7 @@ app.innerHTML = `
               <span>Mutation Scale</span>
               <span id="mutation-scale-value"></span>
             </span>
-            <input id="mutation-scale" type="range" min="0.02" max="0.28" step="0.01" />
+            <input id="mutation-scale" type="range" min="0.02" max="0.5" step="0.01" />
           </label>
 
           <label class="control control-span-2">
@@ -244,15 +273,21 @@ app.innerHTML = `
         </div>
         <div class="button-row">
           <button id="reset-drone">Reset Drone</button>
-          <button id="retarget-camera">Recenter Camera</button>
         </div>
         </section>
+
+        <footer class="panel-footer">
+          <span class="panel-copyright"> © Copyright Konrad Kunkel</span>
+        </footer>
     </aside>
   </div>
 `;
 
 const viewport = document.querySelector(".viewport");
 const appShell = document.querySelector(".app-shell");
+const accentColor = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#1e6fd4";
+
+tintImageToAccent(droneImage, accentColor);
 
 const ui = {
   powerButton: document.querySelector("#power-button"),
@@ -279,7 +314,6 @@ const ui = {
   resetDrone: document.querySelector("#reset-drone"),
   randomTarget: document.querySelector("#random-target"),
   centerTarget: document.querySelector("#center-target"),
-  retargetCamera: document.querySelector("#retarget-camera"),
   motors: Array.from({ length: OUTPUT_SIZE }, (_, index) => ({
     value: document.querySelector(`#motor-${index}-value`),
     fill: document.querySelector(`#motor-${index}-fill`)
@@ -322,7 +356,7 @@ const config = {
   residualMotorRange: 1.35,
   episodeDuration: 8,
   startSpread: 2.1,
-  population: 18,
+  population: 5,
   mutationScale: 0.1,
   trainingSpeed: 2,
   simDt: 1 / 24,
@@ -963,6 +997,10 @@ bindNumericControl(
   false
 );
 bindNumericControl(ui.inputs.population, ui.values.population, "population", (value) => `${value}`, false);
+ui.inputs.population.addEventListener("input", () => {
+  config.previewDroneCount = Math.min(config.population, 12);
+  resetPreviewFleet();
+});
 bindNumericControl(
   ui.inputs.mutationScale,
   ui.values.mutationScale,
@@ -1007,8 +1045,8 @@ ui.modeSwitch.addEventListener("click", () => {
   updateUi();
 });
 
-ui.gizmoToggle.addEventListener("click", () => {
-  state.showTargetGizmo = !state.showTargetGizmo;
+ui.gizmoToggle.addEventListener("change", () => {
+  state.showTargetGizmo = ui.gizmoToggle.checked;
   updateUi();
 });
 
@@ -1064,11 +1102,6 @@ controls.minDistance = 4.5;
 controls.maxDistance = 24;
 controls.minPolarAngle = 0.18;
 controls.maxPolarAngle = Math.PI / 2 - 0.05;
-
-ui.retargetCamera.addEventListener("click", () => {
-  const focus = state.liveDrone ? state.liveDrone.position.clone().lerp(config.target, 0.35) : new THREE.Vector3(0, 2.5, 0);
-  controls.target.copy(focus);
-});
 
 const transformControls = new TransformControls(camera, renderer.domElement);
 transformControls.setMode("translate");
@@ -1349,17 +1382,28 @@ function buildPreviewFleet() {
       scale: 0.72
     });
 
-    previewFleetGroup.add(previewDrone);
     state.previewFleet.push({
       group: previewDrone,
       propellers: previewPropellers,
       propellerSpin: [0, 0, 0, 0],
       droneState: createDroneState(),
-      params: createSeedGenome()
+      params: createSeedGenome(),
+      trailPoints: [],
+      trailLine: new THREE.Line(
+        new THREE.BufferGeometry(),
+        new THREE.LineBasicMaterial({
+          color: `hsl(${hue} 70% 66%)`,
+          transparent: true,
+          opacity: 0.25
+        })
+      )
     });
-  }
-}
 
+    const lastAdded = state.previewFleet[state.previewFleet.length - 1];
+    scene.add(lastAdded.trailLine);
+    previewFleetGroup.add(previewDrone);
+    }
+    }
 function resetPreviewFleet() {
   buildPreviewFleet();
 
@@ -1452,8 +1496,7 @@ function updateUi() {
     : state.trainingActive
       ? "Training Mode"
       : "Simulation Mode";
-  ui.gizmoToggle.classList.toggle("is-active", state.showTargetGizmo);
-  ui.gizmoToggle.setAttribute("aria-pressed", String(state.showTargetGizmo));
+  ui.gizmoToggle.checked = state.showTargetGizmo;
   ui.trainingStatus.textContent = !state.dronePowered ? "Off" : state.trainingActive ? "Training" : "Cruising";
   ui.trainingStatus.dataset.running = String(state.dronePowered && state.trainingActive);
   ui.toggleTraining.textContent = !state.dronePowered ? "Power To Train" : state.trainingActive ? "Pause Training" : "Resume Training";
@@ -1581,6 +1624,7 @@ function stepPreviewFleet(dt) {
 
   state.previewFleet.forEach((preview, index) => {
     preview.group.visible = showPreviewFleet;
+    preview.trailLine.visible = showPreviewFleet;
 
     if (!showPreviewFleet) {
       return;
@@ -1595,10 +1639,17 @@ function stepPreviewFleet(dt) {
         orientation: makeStartOrientation(0, 0, 0)
       });
       preview.propellerSpin = [0, 0, 0, 0];
+      preview.trailPoints = [];
     }
 
     preview.group.position.copy(preview.droneState.position);
     preview.group.quaternion.copy(preview.droneState.orientation);
+
+    preview.trailPoints.push(preview.droneState.position.clone());
+    if (preview.trailPoints.length > 35) {
+      preview.trailPoints.shift();
+    }
+    preview.trailLine.geometry.setFromPoints(preview.trailPoints);
 
     const previewOutputs = preview.droneState.motorOutputs ?? [0, 0, 0, 0];
     previewOutputs.forEach((output, motorIndex) => {
