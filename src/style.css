@@ -562,6 +562,10 @@ input[type="range"] {
   gap: 8px;
 }
 
+.button-row-triple {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .button-row button,
 .button-stack button {
   padding: 9px 10px;

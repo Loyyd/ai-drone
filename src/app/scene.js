@@ -210,6 +210,8 @@ export function createSceneController({ clamp, config, state, viewport }) {
   let gltfLoader = null;
   let mainDrone = null;
   let mainPropellers = [];
+  let mainDroneMixer = null;
+  let mainDroneActions = new Map();
   let onTargetCommit = () => {};
   let onTargetPreview = () => {};
   const scratchLineStart = new THREE.Vector3();
@@ -520,6 +522,61 @@ export function createSceneController({ clamp, config, state, viewport }) {
     return { drone, propellers };
   }
 
+  function setupMainDroneAnimations() {
+    mainDroneActions = new Map();
+
+    if (!droneGltf?.animations?.length || !mainDrone) {
+      mainDroneMixer = null;
+      return;
+    }
+
+    mainDroneMixer = new THREE.AnimationMixer(mainDrone);
+
+    droneGltf.animations.forEach((clip) => {
+      mainDroneActions.set(clip.name, mainDroneMixer.clipAction(clip));
+    });
+  }
+
+  function findMainDroneAnimation(name) {
+    if (mainDroneActions.has(name)) {
+      return mainDroneActions.get(name);
+    }
+
+    const normalizedName = name.toLowerCase();
+
+    for (const [clipName, action] of mainDroneActions.entries()) {
+      if (clipName.toLowerCase() === normalizedName) {
+        return action;
+      }
+    }
+
+    return null;
+  }
+
+  function playMainDroneAnimation(name, options = {}) {
+    const { reverse = false } = options;
+    const action = findMainDroneAnimation(name);
+
+    if (!action || !mainDroneMixer) {
+      return false;
+    }
+
+    mainDroneActions.forEach((otherAction) => {
+      otherAction.stop();
+    });
+
+    const clipDuration = action.getClip().duration;
+    action.setLoop(THREE.LoopOnce, 1);
+    action.clampWhenFinished = true;
+    action.enabled = true;
+    action.paused = false;
+    action.reset();
+    action.timeScale = reverse ? -1 : 1;
+    action.time = reverse ? clipDuration : 0;
+    action.play();
+    return true;
+  }
+
   async function initialize() {
     await loadThreeExtras();
 
@@ -532,6 +589,7 @@ export function createSceneController({ clamp, config, state, viewport }) {
     const droneData = createDrone();
     mainDrone = droneData.drone;
     mainPropellers = droneData.propellers;
+    setupMainDroneAnimations();
     scene.add(mainDrone);
   }
 
@@ -772,8 +830,17 @@ export function createSceneController({ clamp, config, state, viewport }) {
     renderer.render(scene, camera);
   }
 
+  function updateAnimations(dt) {
+    if (!mainDroneMixer) {
+      return;
+    }
+
+    mainDroneMixer.update(dt);
+  }
+
   return {
     initialize,
+    playMainDroneAnimation,
     render,
     resetPreviewFleet,
     resetTrailHistory,
@@ -781,6 +848,7 @@ export function createSceneController({ clamp, config, state, viewport }) {
     sampleTrailPoint,
     setTargetHandlers,
     stepPreviewFleet,
+    updateAnimations,
     updateCameraFocus,
     updateGizmoVisibility,
     updateLiveDroneVisual,

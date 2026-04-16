@@ -54,6 +54,7 @@ function createUiReferences() {
     resetLearning: document.querySelector("#reset-learning"),
     resetDrone: document.querySelector("#reset-drone"),
     randomTarget: document.querySelector("#random-target"),
+    wanderTarget: document.querySelector("#wander-target"),
     centerTarget: document.querySelector("#center-target"),
     motors: Array.from({ length: OUTPUT_SIZE }, (_, index) => ({
       value: document.querySelector(`#motor-${index}-value`),
@@ -182,8 +183,9 @@ export function initializeDom() {
             </label>
           </div>
 
-          <div class="button-row">
+          <div class="button-row button-row-triple">
             <button class="primary" id="random-target">Random Target</button>
+            <button id="wander-target">Roam Target</button>
             <button id="center-target">Center Target</button>
           </div>
         </section>
