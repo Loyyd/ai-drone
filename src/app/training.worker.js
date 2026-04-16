@@ -13,6 +13,11 @@ let simulation = createSimulationEngine({
 let trainingActive = false;
 let trainingLoopRunning = false;
 let revision = 0;
+let lastImprovementAtMs = Date.now();
+
+function getTrainingBudgetMs() {
+  return Math.min(20, Math.max(4, config.trainingSpeed * 4));
+}
 
 function applyConfigSnapshot(snapshot) {
   if (!snapshot) {
@@ -28,7 +33,6 @@ function applyConfigSnapshot(snapshot) {
     config[key] = value;
   });
 
-  config.previewDroneCount = Math.min(config.population, 12);
   motorOffsets = createMotorOffsets(config);
   simulation = createSimulationEngine({
     config,
@@ -45,6 +49,7 @@ function postTrainingState() {
       bestScore: state.bestScore,
       generation: state.generation,
       learningHistory: [...state.learningHistory],
+      lastImprovementAtMs: state.lastImprovementAtMs ?? lastImprovementAtMs,
       previewCandidates: state.previewCandidates,
       revision,
       stagnation: state.stagnation
@@ -54,6 +59,8 @@ function postTrainingState() {
 
 function resetLearning() {
   revision += 1;
+  lastImprovementAtMs = Date.now();
+  state.lastImprovementAtMs = lastImprovementAtMs;
   state.bestParams = simulation.createSeedGenome();
   state.bestScore = simulation.scoreGenome(state.bestParams);
   state.generation = 0;
@@ -79,13 +86,18 @@ async function ensureTrainingLoop() {
   trainingLoopRunning = true;
 
   while (trainingActive) {
-    const batchSize = Math.max(1, Math.round(config.trainingSpeed));
+    const deadline = performance.now() + getTrainingBudgetMs();
+    let generationsCompleted = 0;
 
-    for (let index = 0; index < batchSize; index += 1) {
+    do {
       simulation.trainGeneration();
+      generationsCompleted += 1;
+    } while (trainingActive && performance.now() < deadline);
+
+    if (generationsCompleted > 0) {
+      postTrainingState();
     }
 
-    postTrainingState();
     await new Promise((resolve) => setTimeout(resolve, 0));
   }
 

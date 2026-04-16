@@ -5,23 +5,30 @@ export function setupLayoutInteractions({
   ui,
   viewport
 }) {
+  function applyOverlayPosition(card, position) {
+    const viewportRect = viewport.getBoundingClientRect();
+    const cardRect = card.getBoundingClientRect();
+    const maxLeft = Math.max(12, viewportRect.width - cardRect.width - 12);
+    const maxTop = Math.max(12, viewportRect.height - cardRect.height - 12);
+
+    position.left = clamp(position.left, 12, maxLeft);
+    position.top = clamp(position.top, 12, maxTop);
+
+    card.style.left = `${position.left}px`;
+    card.style.top = `${position.top}px`;
+  }
+
   function applyHudPosition() {
     if (window.innerWidth <= 640) {
+      ui.learningCard.style.left = "";
+      ui.learningCard.style.top = "";
       ui.hudCard.style.left = "";
       ui.hudCard.style.top = "";
       return;
     }
 
-    const viewportRect = viewport.getBoundingClientRect();
-    const hudRect = ui.hudCard.getBoundingClientRect();
-    const maxLeft = Math.max(12, viewportRect.width - hudRect.width - 12);
-    const maxTop = Math.max(12, viewportRect.height - hudRect.height - 12);
-
-    state.hudPosition.left = clamp(state.hudPosition.left, 12, maxLeft);
-    state.hudPosition.top = clamp(state.hudPosition.top, 12, maxTop);
-
-    ui.hudCard.style.left = `${state.hudPosition.left}px`;
-    ui.hudCard.style.top = `${state.hudPosition.top}px`;
+    applyOverlayPosition(ui.learningCard, state.learningCardPosition);
+    applyOverlayPosition(ui.hudCard, state.hudPosition);
   }
 
   function applyPanelWidth() {
@@ -35,54 +42,79 @@ export function setupLayoutInteractions({
     appShell.style.setProperty("--panel-width", `${state.panelWidth}px`);
   }
 
-  ui.hudDragHandle.addEventListener("pointerdown", (event) => {
-    if (window.innerWidth <= 640) {
-      return;
+  function bindOverlayDrag({
+    card,
+    dragHandle,
+    dragOffset,
+    pointerIdKey,
+    position,
+    draggingKey
+  }) {
+    dragHandle.addEventListener("pointerdown", (event) => {
+      if (window.innerWidth <= 640) {
+        return;
+      }
+
+      state[draggingKey] = true;
+      state[pointerIdKey] = event.pointerId;
+      dragHandle.setPointerCapture(event.pointerId);
+
+      const cardRect = card.getBoundingClientRect();
+      const viewportRect = viewport.getBoundingClientRect();
+      dragOffset.x = event.clientX - cardRect.left;
+      dragOffset.y = event.clientY - cardRect.top;
+      position.left = cardRect.left - viewportRect.left;
+      position.top = cardRect.top - viewportRect.top;
+      card.classList.add("dragging");
+    });
+
+    dragHandle.addEventListener("pointermove", (event) => {
+      if (!state[draggingKey] || event.pointerId !== state[pointerIdKey]) {
+        return;
+      }
+
+      const viewportRect = viewport.getBoundingClientRect();
+      position.left = event.clientX - viewportRect.left - dragOffset.x;
+      position.top = event.clientY - viewportRect.top - dragOffset.y;
+      applyOverlayPosition(card, position);
+    });
+
+    function stopDragging(event) {
+      if (!state[draggingKey] || event.pointerId !== state[pointerIdKey]) {
+        return;
+      }
+
+      state[draggingKey] = false;
+      card.classList.remove("dragging");
+
+      if (dragHandle.hasPointerCapture(event.pointerId)) {
+        dragHandle.releasePointerCapture(event.pointerId);
+      }
+
+      state[pointerIdKey] = null;
     }
 
-    state.hudDragging = true;
-    state.hudDragPointerId = event.pointerId;
-    ui.hudDragHandle.setPointerCapture(event.pointerId);
-
-    const hudRect = ui.hudCard.getBoundingClientRect();
-    const viewportRect = viewport.getBoundingClientRect();
-    state.hudDragOffset.x = event.clientX - hudRect.left;
-    state.hudDragOffset.y = event.clientY - hudRect.top;
-    state.hudPosition.left = hudRect.left - viewportRect.left;
-    state.hudPosition.top = hudRect.top - viewportRect.top;
-    ui.hudCard.classList.add("dragging");
-  });
-
-  ui.hudDragHandle.addEventListener("pointermove", (event) => {
-    if (!state.hudDragging || event.pointerId !== state.hudDragPointerId) {
-      return;
-    }
-
-    const viewportRect = viewport.getBoundingClientRect();
-    state.hudPosition.left =
-      event.clientX - viewportRect.left - state.hudDragOffset.x;
-    state.hudPosition.top =
-      event.clientY - viewportRect.top - state.hudDragOffset.y;
-    applyHudPosition();
-  });
-
-  function stopHudDragging(event) {
-    if (!state.hudDragging || event.pointerId !== state.hudDragPointerId) {
-      return;
-    }
-
-    state.hudDragging = false;
-    ui.hudCard.classList.remove("dragging");
-
-    if (ui.hudDragHandle.hasPointerCapture(event.pointerId)) {
-      ui.hudDragHandle.releasePointerCapture(event.pointerId);
-    }
-
-    state.hudDragPointerId = null;
+    dragHandle.addEventListener("pointerup", stopDragging);
+    dragHandle.addEventListener("pointercancel", stopDragging);
   }
 
-  ui.hudDragHandle.addEventListener("pointerup", stopHudDragging);
-  ui.hudDragHandle.addEventListener("pointercancel", stopHudDragging);
+  bindOverlayDrag({
+    card: ui.learningCard,
+    dragHandle: ui.learningCardDragHandle,
+    dragOffset: state.learningCardDragOffset,
+    pointerIdKey: "learningCardDragPointerId",
+    position: state.learningCardPosition,
+    draggingKey: "learningCardDragging"
+  });
+
+  bindOverlayDrag({
+    card: ui.hudCard,
+    dragHandle: ui.hudDragHandle,
+    dragOffset: state.hudDragOffset,
+    pointerIdKey: "hudDragPointerId",
+    position: state.hudPosition,
+    draggingKey: "hudDragging"
+  });
 
   ui.panelResizer.addEventListener("pointerdown", (event) => {
     if (window.innerWidth <= 980) {

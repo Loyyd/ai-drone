@@ -39,7 +39,7 @@ select {
 }
 
 .app-shell {
-  --panel-width: 376px;
+  --panel-width: 396px;
   min-height: 100vh;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 10px var(--panel-width);
@@ -265,6 +265,14 @@ select {
   touch-action: none;
 }
 
+.learning-card {
+  top: 12px;
+  padding: 10px 11px 11px;
+  width: min(344px, calc(100% - 24px));
+  touch-action: none;
+}
+
+.learning-card.dragging,
 .hud-card.dragging {
   box-shadow: 0 20px 52px rgba(91, 109, 135, 0.18);
 }
@@ -298,6 +306,10 @@ select {
   cursor: grabbing;
 }
 
+.learning-card.dragging .hud-drag-handle {
+  cursor: grabbing;
+}
+
 .hud-title-row {
   display: flex;
   align-items: center;
@@ -306,6 +318,16 @@ select {
 
 .hud-status {
   flex-shrink: 0;
+}
+
+.chart-range-badge {
+  flex-shrink: 0;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: rgba(232, 239, 249, 0.95);
+  color: #5b6d87;
+  font-size: 0.74rem;
+  font-weight: 700;
 }
 
 .hud-grid {
@@ -546,8 +568,32 @@ select {
   font-size: 0.8rem;
 }
 
+.control-label-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
 .control-label span:last-child {
   color: var(--muted);
+}
+
+.control-info-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: #f2a033;
+  color: #ffffff;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: help;
+  box-shadow: 0 4px 12px rgba(242, 160, 51, 0.22);
 }
 
 input[type="range"] {
@@ -613,6 +659,12 @@ input[type="range"] {
   background: #ffffff;
 }
 
+.chart-wrap-overlay {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
 .chart-wrap canvas {
   width: 100%;
   height: 96px;
@@ -625,6 +677,17 @@ input[type="range"] {
   gap: 12px;
   margin-bottom: 6px;
   font-size: 0.74rem;
+  color: var(--muted);
+}
+
+.chart-meta {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 6px;
+}
+
+.chart-last-change {
+  font-size: 0.72rem;
   color: var(--muted);
 }
 
@@ -733,6 +796,10 @@ input[type="range"] {
   .hud-card {
     width: calc(100% - 24px);
   }
+
+  .learning-card {
+    width: calc(100% - 24px);
+  }
 }
 
 @media (max-width: 640px) {
@@ -748,6 +815,7 @@ input[type="range"] {
     right: 14px;
   }
 
+  .learning-card,
   .hud-card {
     position: static;
     margin: 0 12px 12px;

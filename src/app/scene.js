@@ -212,6 +212,7 @@ export function createSceneController({ clamp, config, state, viewport }) {
   let mainPropellers = [];
   let mainDroneMixer = null;
   let mainDroneActions = new Map();
+  let previewFrameCounter = 0;
   let onTargetCommit = () => {};
   let onTargetPreview = () => {};
   const scratchLineStart = new THREE.Vector3();
@@ -847,13 +848,25 @@ export function createSceneController({ clamp, config, state, viewport }) {
     targetAxisGuides.visible = gizmoVisible;
   }
 
-  function applyPropellerRotation(propellers, propellerSpin, motorOutputs = []) {
+  function applyPropellerRotation(
+    propellers,
+    propellerSpin,
+    motorOutputs = [],
+    { enableBlur = true } = {}
+  ) {
     propellers.forEach((propeller, index) => {
       propeller.rotation.x =
         propellerSpin[index] * MOTOR_SPIN_DIRECTIONS[index];
 
       const blurMesh = propeller.userData.blurMesh;
       if (!blurMesh) {
+        return;
+      }
+
+      if (!enableBlur) {
+        blurMesh.visible = false;
+        blurMesh.material.opacity = 0;
+        setObjectOpacity(propeller, 1);
         return;
       }
 
@@ -879,12 +892,18 @@ export function createSceneController({ clamp, config, state, viewport }) {
     simulateDroneStep
   }) {
     const showPreviewFleet = state.dronePowered && state.trainingActive;
+    previewFrameCounter += 1;
+    const shouldAdvancePreviewFrame = previewFrameCounter % 2 === 0;
 
     state.previewFleet.forEach((preview, index) => {
       preview.group.visible = showPreviewFleet;
-      preview.trailLine.visible = showPreviewFleet;
+      preview.trailLine.visible = false;
 
       if (!showPreviewFleet) {
+        return;
+      }
+
+      if (!shouldAdvancePreviewFrame) {
         return;
       }
 
@@ -903,12 +922,6 @@ export function createSceneController({ clamp, config, state, viewport }) {
       preview.group.position.copy(preview.droneState.position);
       preview.group.quaternion.copy(preview.droneState.orientation);
 
-      preview.trailPoints.push(preview.droneState.position.clone());
-      if (preview.trailPoints.length > 35) {
-        preview.trailPoints.shift();
-      }
-      updateLineGeometry(preview.trailLine, preview.trailPoints);
-
       const previewOutputs = preview.droneState.motorOutputs ?? [0, 0, 0, 0];
       previewOutputs.forEach((output, motorIndex) => {
         preview.propellerSpin[motorIndex] +=
@@ -917,7 +930,8 @@ export function createSceneController({ clamp, config, state, viewport }) {
       applyPropellerRotation(
         preview.propellers,
         preview.propellerSpin,
-        previewOutputs
+        previewOutputs,
+        { enableBlur: false }
       );
     });
   }

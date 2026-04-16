@@ -34,12 +34,15 @@ function createUiReferences() {
     powerButton: document.querySelector("#power-button"),
     modeSwitch: document.querySelector("#mode-switch"),
     gizmoToggle: document.querySelector("#gizmo-toggle"),
+    learningCard: document.querySelector("#learning-card"),
+    learningCardDragHandle: document.querySelector("#learning-card-drag-handle"),
     hudCard: document.querySelector("#hud-card"),
     hudDragHandle: document.querySelector("#hud-drag-handle"),
     panelResizer: document.querySelector("#panel-resizer"),
     panel: document.querySelector("#panel"),
     trainingStatus: document.querySelector("#training-status"),
     generation: document.querySelector("#generation-readout"),
+    trainingTime: document.querySelector("#training-time-readout"),
     score: document.querySelector("#score-readout"),
     reward: document.querySelector("#reward-readout"),
     distance: document.querySelector("#distance-readout"),
@@ -49,6 +52,7 @@ function createUiReferences() {
     thrust: document.querySelector("#thrust-readout"),
     targetReadout: document.querySelector("#target-readout"),
     chartRange: document.querySelector("#chart-range-label"),
+    chartLastChange: document.querySelector("#chart-last-change"),
     chartCanvas: document.querySelector("#learning-chart"),
     toggleTraining: document.querySelector("#toggle-training"),
     resetLearning: document.querySelector("#reset-learning"),
@@ -71,6 +75,7 @@ function createUiReferences() {
       linearDamping: document.querySelector("#linear-damping"),
       angularDamping: document.querySelector("#angular-damping"),
       population: document.querySelector("#population"),
+      previewDroneCount: document.querySelector("#preview-drone-count"),
       mutationScale: document.querySelector("#mutation-scale"),
       trainingSpeed: document.querySelector("#training-speed")
     },
@@ -82,6 +87,7 @@ function createUiReferences() {
       linearDamping: document.querySelector("#linear-damping-value"),
       angularDamping: document.querySelector("#angular-damping-value"),
       population: document.querySelector("#population-value"),
+      previewDroneCount: document.querySelector("#preview-drone-count-value"),
       mutationScale: document.querySelector("#mutation-scale-value"),
       trainingSpeed: document.querySelector("#training-speed-value")
     }
@@ -120,6 +126,25 @@ export function initializeDom() {
           <span class="gizmo-toggle-icon" aria-hidden="true"></span>
         </label>
 
+        <div class="overlay-card learning-card" id="learning-card">
+          <div class="hud-header hud-drag-handle" id="learning-card-drag-handle">
+            <div class="hud-title-row">
+              <span class="eyebrow">Learning Progress</span>
+            </div>
+            <span class="chart-range-badge" id="chart-range-label">Starting...</span>
+          </div>
+
+          <div class="chart-wrap chart-wrap-overlay">
+            <div class="chart-label">
+              <span>Best reward over recent generations</span>
+            </div>
+            <canvas id="learning-chart" width="320" height="120"></canvas>
+            <div class="chart-meta">
+              <span class="chart-last-change" id="chart-last-change">Last change: 0s</span>
+            </div>
+          </div>
+        </div>
+
         <div class="overlay-card hud-card" id="hud-card">
           <div class="hud-header hud-drag-handle" id="hud-drag-handle">
             <div class="hud-title-row">
@@ -130,6 +155,7 @@ export function initializeDom() {
 
           <div class="hud-grid">
             <div class="hud-row"><span class="hud-label">Generation:</span><span class="hud-value" id="generation-readout">0</span></div>
+            <div class="hud-row"><span class="hud-label">Training Time:</span><span class="hud-value" id="training-time-readout">0s</span></div>
             <div class="hud-row"><span class="hud-label">Best Score:</span><span class="hud-value" id="score-readout">0.00</span></div>
             <div class="hud-row"><span class="hud-label">Reward:</span><span class="hud-value" id="reward-readout">0.00</span></div>
             <div class="hud-row"><span class="hud-label">Distance:</span><span class="hud-value" id="distance-readout">0.00 m</span></div>
@@ -191,17 +217,6 @@ export function initializeDom() {
         </section>
 
         <section class="panel-section">
-          <h3>Learning Progress</h3>
-          <div class="chart-wrap">
-            <div class="chart-label">
-              <span>Best reward over recent generations</span>
-              <span id="chart-range-label">Starting...</span>
-            </div>
-            <canvas id="learning-chart" width="320" height="120"></canvas>
-          </div>
-        </section>
-
-        <section class="panel-section">
           <h3>Motor Thrust</h3>
           <div class="motor-grid">
             <div class="motor-card">
@@ -236,7 +251,15 @@ export function initializeDom() {
           <div class="control-grid control-grid-compact">
             <label class="control">
               <span class="control-label">
-                <span>Episode Duration</span>
+                <span class="control-label-title">
+                  <span>Episode Duration</span>
+                  <span
+                    class="control-info-badge"
+                    tabindex="0"
+                    aria-label="Retrain required"
+                    title="Retrain required"
+                  >i</span>
+                </span>
                 <span id="episode-duration-value"></span>
               </span>
               <input id="episode-duration" type="range" min="4" max="12" step="0.5" />
@@ -244,10 +267,18 @@ export function initializeDom() {
 
             <label class="control">
               <span class="control-label">
-                <span>Start Spread</span>
+                <span class="control-label-title">
+                  <span>Start Spread</span>
+                  <span
+                    class="control-info-badge"
+                    tabindex="0"
+                    aria-label="Retrain required"
+                    title="Retrain required"
+                  >i</span>
+                </span>
                 <span id="start-spread-value"></span>
               </span>
-              <input id="start-spread" type="range" min="0.8" max="3.5" step="0.1" />
+              <input id="start-spread" type="range" min="0" max="3.5" step="0.1" />
             </label>
           </div>
         </section>
@@ -260,7 +291,7 @@ export function initializeDom() {
                 <span>Mass</span>
                 <span id="mass-value"></span>
               </span>
-              <input id="mass" type="range" min="0.7" max="2.2" step="0.05" />
+              <input id="mass" type="range" min="0.5" max="4" step="0.05" />
             </label>
 
             <label class="control">
@@ -297,7 +328,15 @@ export function initializeDom() {
                 <span>Population</span>
                 <span id="population-value"></span>
               </span>
-              <input id="population" type="range" min="1" max="35" step="1" />
+              <input id="population" type="range" min="1" max="100" step="1" />
+            </label>
+
+            <label class="control">
+              <span class="control-label">
+                <span>Preview Drones</span>
+                <span id="preview-drone-count-value"></span>
+              </span>
+              <input id="preview-drone-count" type="range" min="0" max="12" step="1" />
             </label>
 
             <label class="control">

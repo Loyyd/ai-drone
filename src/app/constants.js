@@ -2,7 +2,7 @@ import * as THREE from "three";
 
 export const WORLD_UP = new THREE.Vector3(0, 1, 0);
 export const DRONE_BASE_OFFSET = 0.35;
-export const INPUT_SIZE = 12;
+export const INPUT_SIZE = 14;
 export const HIDDEN_SIZE = 12;
 export const OUTPUT_SIZE = 4;
 export const GENOME_SIZE =

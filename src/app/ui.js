@@ -1,5 +1,24 @@
 import * as THREE from "three";
 
+function formatElapsedCompact(milliseconds) {
+  const totalSeconds = Math.max(0, Math.floor(milliseconds / 1000));
+
+  if (totalSeconds < 60) {
+    return `${totalSeconds}s`;
+  }
+
+  const totalMinutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+
+  if (totalMinutes < 60) {
+    return `${totalMinutes}m ${seconds}s`;
+  }
+
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return `${hours}h ${minutes}m`;
+}
+
 export function syncTargetControls(ui, config) {
   ui.inputs.targetX.value = config.target.x.toFixed(1);
   ui.inputs.targetY.value = config.target.y.toFixed(1);
@@ -136,6 +155,12 @@ export function updateUi({
   updateGizmoVisibility();
 
   ui.generation.textContent = state.generation.toLocaleString();
+  ui.trainingTime.textContent = formatElapsedCompact(
+    state.trainingTimeAccumulatedMs +
+      (state.trainingActive && state.trainingTimeStartedAtMs
+        ? Date.now() - state.trainingTimeStartedAtMs
+        : 0)
+  );
   ui.score.textContent = state.bestScore.toFixed(2);
   ui.reward.textContent = state.reward.toFixed(2);
   ui.distance.textContent = `${state.distance.toFixed(2)} m`;
@@ -159,4 +184,7 @@ export function updateUi({
     state.learningHistory.length > 0
       ? `${state.learningHistory.length} samples`
       : "Starting...";
+  ui.chartLastChange.textContent = `Last change: ${formatElapsedCompact(
+    state.lastImprovementAtMs ? Date.now() - state.lastImprovementAtMs : 0
+  )}`;
 }

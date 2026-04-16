@@ -13,12 +13,15 @@ import { clamp, gaussianRandom } from "./utils.js";
 
 export function createSimulationEngine({ config, motorOffsets, state }) {
   const scratchUpWorld = new THREE.Vector3();
+  const scratchForwardWorld = new THREE.Vector3();
   const scratchInverseOrientation = new THREE.Quaternion();
   const scratchLocalTargetOffset = new THREE.Vector3();
   const scratchLocalVelocity = new THREE.Vector3();
   const scratchUprightLocal = new THREE.Vector3();
   const scratchLocalAngularVelocity = new THREE.Vector3();
-  const scratchAttitude = new THREE.Euler();
+  const scratchTargetOffsetWorld = new THREE.Vector3();
+  const scratchTargetDirectionWorld = new THREE.Vector3();
+  const scratchDesiredForwardWorld = new THREE.Vector3();
   const scratchTotalForceWorld = new THREE.Vector3();
   const scratchAcceleration = new THREE.Vector3();
   const scratchTorque = new THREE.Vector3();
@@ -27,8 +30,22 @@ export function createSimulationEngine({ config, motorOffsets, state }) {
   const scratchDeltaRotation = new THREE.Vector3();
   const scratchRotationAxis = new THREE.Vector3();
   const scratchDeltaQuaternion = new THREE.Quaternion();
+  const scratchPolicyInputs = new Float32Array(INPUT_SIZE);
+  const scratchHidden = new Float32Array(HIDDEN_SIZE);
+  const scratchPolicyOutputs = new Float32Array(OUTPUT_SIZE);
+  const scratchStabilizerOutputs = new Float32Array(OUTPUT_SIZE);
+  const scenarioStarts = buildScenarioStarts();
+  const episodeSteps = Math.floor(config.episodeDuration / config.simDt);
 
   function createDroneState(overrides = {}) {
+    const motorOutputs = new Float32Array(OUTPUT_SIZE);
+
+    if (overrides.motorOutputs) {
+      for (let index = 0; index < OUTPUT_SIZE; index += 1) {
+        motorOutputs[index] = overrides.motorOutputs[index] ?? 0;
+      }
+    }
+
     return {
       position:
         overrides.position?.clone() ??
@@ -38,13 +55,15 @@ export function createSimulationEngine({ config, motorOffsets, state }) {
         overrides.orientation?.clone() ?? new THREE.Quaternion(),
       angularVelocity:
         overrides.angularVelocity?.clone() ?? new THREE.Vector3(),
-      motorOutputs: overrides.motorOutputs
-        ? [...overrides.motorOutputs]
-        : [0, 0, 0, 0]
+      motorOutputs
     };
   }
 
   function getPreviewSpawnPosition(index, count) {
+    if (config.startSpread <= 0.0001) {
+      return new THREE.Vector3(0, config.groundY, 0);
+    }
+
     const radius = 1.2;
     const angle = (index / Math.max(count, 1)) * Math.PI * 2;
 
@@ -66,11 +85,11 @@ export function createSimulationEngine({ config, motorOffsets, state }) {
   }
 
   function mutateGenome(baseGenome, scale, forceWideSearch = false) {
-    const next = Float32Array.from(baseGenome);
+    const next = new Float32Array(baseGenome.length);
     const localScale = scale * (forceWideSearch ? 1.9 : 1);
 
     for (let index = 0; index < next.length; index += 1) {
-      next[index] += gaussianRandom() * localScale;
+      next[index] = baseGenome[index] + gaussianRandom() * localScale;
     }
 
     return next;
@@ -79,6 +98,69 @@ export function createSimulationEngine({ config, motorOffsets, state }) {
   function getTiltRadians(orientation) {
     scratchUpWorld.copy(WORLD_UP).applyQuaternion(orientation);
     return Math.acos(clamp(scratchUpWorld.y, -1, 1));
+  }
+
+  function normalizeAngle(angle) {
+    return Math.atan2(Math.sin(angle), Math.cos(angle));
+  }
+
+  function updateLocalUpright(droneState) {
+    scratchInverseOrientation.copy(droneState.orientation).invert();
+    scratchUprightLocal.copy(WORLD_UP).applyQuaternion(scratchInverseOrientation);
+  }
+
+  function getCurrentYaw(droneState) {
+    scratchForwardWorld.set(0, 0, 1).applyQuaternion(droneState.orientation);
+    scratchForwardWorld.y = 0;
+
+    if (scratchForwardWorld.lengthSq() < 0.0001) {
+      return 0;
+    }
+
+    scratchForwardWorld.normalize();
+    return Math.atan2(scratchForwardWorld.x, scratchForwardWorld.z);
+  }
+
+  function getDesiredWorldYaw(droneState) {
+    scratchTargetOffsetWorld.copy(config.target).sub(droneState.position);
+    scratchTargetOffsetWorld.y = 0;
+
+    if (scratchTargetOffsetWorld.lengthSq() < 0.04) {
+      return getCurrentYaw(droneState);
+    }
+
+    return Math.atan2(
+      scratchTargetOffsetWorld.x,
+      scratchTargetOffsetWorld.z
+    );
+  }
+
+  function getHorizontalYawError(droneState) {
+    return normalizeAngle(
+      getDesiredWorldYaw(droneState) - getCurrentYaw(droneState)
+    );
+  }
+
+  function getHeadingAlignment(droneState) {
+    const desiredYaw = getDesiredWorldYaw(droneState);
+    scratchDesiredForwardWorld.set(
+      Math.sin(desiredYaw),
+      0,
+      Math.cos(desiredYaw)
+    );
+    scratchForwardWorld.set(0, 0, 1).applyQuaternion(droneState.orientation);
+    scratchForwardWorld.y = 0;
+
+    if (scratchForwardWorld.lengthSq() < 0.0001) {
+      return 0;
+    }
+
+    scratchForwardWorld.normalize();
+    return clamp(
+      scratchForwardWorld.dot(scratchDesiredForwardWorld),
+      -1,
+      1
+    );
   }
 
   function buildPolicyInputs(droneState) {
@@ -96,26 +178,29 @@ export function createSimulationEngine({ config, motorOffsets, state }) {
     scratchLocalAngularVelocity
       .copy(droneState.angularVelocity)
       .multiplyScalar(0.45);
+    const yawError = getHorizontalYawError(droneState);
+    const headingAlignment = getHeadingAlignment(droneState);
 
-    return [
-      clamp(scratchLocalTargetOffset.x, -1.6, 1.6),
-      clamp(scratchLocalTargetOffset.y, -1.6, 1.6),
-      clamp(scratchLocalTargetOffset.z, -1.6, 1.6),
-      clamp(scratchLocalVelocity.x, -1.5, 1.5),
-      clamp(scratchLocalVelocity.y, -1.5, 1.5),
-      clamp(scratchLocalVelocity.z, -1.5, 1.5),
-      clamp(scratchUprightLocal.x, -1, 1),
-      clamp(scratchUprightLocal.y, -1, 1),
-      clamp(scratchUprightLocal.z, -1, 1),
-      clamp(scratchLocalAngularVelocity.x, -1.4, 1.4),
-      clamp(scratchLocalAngularVelocity.y, -1.4, 1.4),
-      clamp(scratchLocalAngularVelocity.z, -1.4, 1.4)
-    ];
+    scratchPolicyInputs[0] = clamp(scratchLocalTargetOffset.x, -1.6, 1.6);
+    scratchPolicyInputs[1] = clamp(scratchLocalTargetOffset.y, -1.6, 1.6);
+    scratchPolicyInputs[2] = clamp(scratchLocalTargetOffset.z, -1.6, 1.6);
+    scratchPolicyInputs[3] = clamp(scratchLocalVelocity.x, -1.5, 1.5);
+    scratchPolicyInputs[4] = clamp(scratchLocalVelocity.y, -1.5, 1.5);
+    scratchPolicyInputs[5] = clamp(scratchLocalVelocity.z, -1.5, 1.5);
+    scratchPolicyInputs[6] = clamp(scratchUprightLocal.x, -1, 1);
+    scratchPolicyInputs[7] = clamp(scratchUprightLocal.y, -1, 1);
+    scratchPolicyInputs[8] = clamp(scratchUprightLocal.z, -1, 1);
+    scratchPolicyInputs[9] = clamp(scratchLocalAngularVelocity.x, -1.4, 1.4);
+    scratchPolicyInputs[10] = clamp(scratchLocalAngularVelocity.y, -1.4, 1.4);
+    scratchPolicyInputs[11] = clamp(scratchLocalAngularVelocity.z, -1.4, 1.4);
+    scratchPolicyInputs[12] = clamp(Math.sin(yawError), -1, 1);
+    scratchPolicyInputs[13] = clamp(headingAlignment, -1, 1);
+
+    return scratchPolicyInputs;
   }
 
   function policyMotorOutputs(params, droneState) {
     const inputs = buildPolicyInputs(droneState);
-    const hidden = new Array(HIDDEN_SIZE);
     let offset = 0;
 
     for (let hiddenIndex = 0; hiddenIndex < HIDDEN_SIZE; hiddenIndex += 1) {
@@ -126,27 +211,26 @@ export function createSimulationEngine({ config, motorOffsets, state }) {
         offset += 1;
       }
 
-      hidden[hiddenIndex] = Math.tanh(activation);
+      scratchHidden[hiddenIndex] = Math.tanh(activation);
     }
 
     const outputBase = INPUT_SIZE * HIDDEN_SIZE + HIDDEN_SIZE;
     const outputBiasBase = outputBase + HIDDEN_SIZE * OUTPUT_SIZE;
-    const outputs = new Array(OUTPUT_SIZE);
 
     for (let outputIndex = 0; outputIndex < OUTPUT_SIZE; outputIndex += 1) {
       let activation = params[outputBiasBase + outputIndex];
 
       for (let hiddenIndex = 0; hiddenIndex < HIDDEN_SIZE; hiddenIndex += 1) {
         activation +=
-          hidden[hiddenIndex] *
+          scratchHidden[hiddenIndex] *
           params[outputBase + hiddenIndex * OUTPUT_SIZE + outputIndex];
       }
 
-      outputs[outputIndex] =
+      scratchPolicyOutputs[outputIndex] =
         Math.tanh(activation) * config.residualMotorRange;
     }
 
-    return outputs;
+    return scratchPolicyOutputs;
   }
 
   function computeStabilizerMotorOutputs(droneState) {
@@ -158,10 +242,9 @@ export function createSimulationEngine({ config, motorOffsets, state }) {
     scratchLocalVelocity
       .copy(droneState.velocity)
       .applyQuaternion(scratchInverseOrientation);
-    scratchAttitude.setFromQuaternion(droneState.orientation, "XYZ");
-    const currentPitch = scratchAttitude.x;
-    const currentYaw = scratchAttitude.y;
-    const currentRoll = scratchAttitude.z;
+    updateLocalUpright(droneState);
+    const currentPitch = Math.atan2(scratchUprightLocal.z, scratchUprightLocal.y);
+    const currentRoll = Math.atan2(-scratchUprightLocal.x, scratchUprightLocal.y);
 
     const desiredPitch = clamp(
       scratchLocalTargetOffset.z * 0.11 - scratchLocalVelocity.z * 0.2,
@@ -186,10 +269,11 @@ export function createSimulationEngine({ config, motorOffsets, state }) {
       -2.2,
       2.2
     );
+    const yawError = getHorizontalYawError(droneState);
     const yawCommand = clamp(
-      -currentYaw * 1.2 - droneState.angularVelocity.y * 0.35,
-      -0.5,
-      0.5
+      yawError * 1.8 - droneState.angularVelocity.y * 0.52,
+      -1.1,
+      1.1
     );
     scratchUpWorld.copy(WORLD_UP).applyQuaternion(droneState.orientation);
     const uprightFactor = Math.max(0.45, scratchUpWorld.y);
@@ -204,28 +288,28 @@ export function createSimulationEngine({ config, motorOffsets, state }) {
     );
     const baseMotorThrust = totalThrust / OUTPUT_SIZE;
 
-    return [
-      clamp(
-        baseMotorThrust - pitchCommand - rollCommand - yawCommand,
-        0,
-        config.maxMotorThrust
-      ),
-      clamp(
-        baseMotorThrust - pitchCommand + rollCommand + yawCommand,
-        0,
-        config.maxMotorThrust
-      ),
-      clamp(
-        baseMotorThrust + pitchCommand - rollCommand + yawCommand,
-        0,
-        config.maxMotorThrust
-      ),
-      clamp(
-        baseMotorThrust + pitchCommand + rollCommand - yawCommand,
-        0,
-        config.maxMotorThrust
-      )
-    ];
+    scratchStabilizerOutputs[0] = clamp(
+      baseMotorThrust - pitchCommand - rollCommand - yawCommand,
+      0,
+      config.maxMotorThrust
+    );
+    scratchStabilizerOutputs[1] = clamp(
+      baseMotorThrust - pitchCommand + rollCommand + yawCommand,
+      0,
+      config.maxMotorThrust
+    );
+    scratchStabilizerOutputs[2] = clamp(
+      baseMotorThrust + pitchCommand - rollCommand + yawCommand,
+      0,
+      config.maxMotorThrust
+    );
+    scratchStabilizerOutputs[3] = clamp(
+      baseMotorThrust + pitchCommand + rollCommand - yawCommand,
+      0,
+      config.maxMotorThrust
+    );
+
+    return scratchStabilizerOutputs;
   }
 
   function evaluateStepReward(droneState, acceleration) {
@@ -233,6 +317,8 @@ export function createSimulationEngine({ config, motorOffsets, state }) {
     const speed = droneState.velocity.length();
     const tilt = getTiltRadians(droneState.orientation);
     const angularSpeed = droneState.angularVelocity.length();
+    const headingAlignment = getHeadingAlignment(droneState);
+    const yawError = Math.abs(getHorizontalYawError(droneState));
 
     let reward = 4.6;
     reward -= distance * 1.65;
@@ -240,6 +326,8 @@ export function createSimulationEngine({ config, motorOffsets, state }) {
     reward -= tilt * 1.1;
     reward -= angularSpeed * 0.18;
     reward -= acceleration.length() * 0.02;
+    reward += headingAlignment * 0.32;
+    reward -= yawError * 0.08;
 
     if (distance < 1.0) {
       reward += 1.5;
@@ -247,6 +335,10 @@ export function createSimulationEngine({ config, motorOffsets, state }) {
 
     if (distance < 0.45 && speed < 0.55 && tilt < 0.24) {
       reward += 4.3;
+    }
+
+    if (distance < 1.3 && headingAlignment > 0.8) {
+      reward += 0.5;
     }
 
     if (droneState.position.y <= config.groundY + 0.02) {
@@ -259,14 +351,18 @@ export function createSimulationEngine({ config, motorOffsets, state }) {
   function simulateDroneStep(params, droneState, dt) {
     const stabilizerOutputs = computeStabilizerMotorOutputs(droneState);
     const policyAdjustments = policyMotorOutputs(params, droneState);
-    const motorOutputs = stabilizerOutputs.map((baseThrust, index) =>
-      clamp(
-        baseThrust + policyAdjustments[index],
+    let totalThrust = 0;
+
+    for (let index = 0; index < OUTPUT_SIZE; index += 1) {
+      const motorOutput = clamp(
+        stabilizerOutputs[index] + policyAdjustments[index],
         0,
         config.maxMotorThrust
-      )
-    );
-    const totalThrust = motorOutputs.reduce((sum, thrust) => sum + thrust, 0);
+      );
+      droneState.motorOutputs[index] = motorOutput;
+      totalThrust += motorOutput;
+    }
+
     scratchTotalForceWorld
       .set(0, totalThrust, 0)
       .applyQuaternion(droneState.orientation)
@@ -285,7 +381,7 @@ export function createSimulationEngine({ config, motorOffsets, state }) {
     scratchTorque.set(0, 0, 0);
 
     for (let index = 0; index < OUTPUT_SIZE; index += 1) {
-      scratchThrustForce.set(0, motorOutputs[index], 0);
+      scratchThrustForce.set(0, droneState.motorOutputs[index], 0);
       scratchTorque.add(
         scratchLocalAngularVelocity
           .copy(motorOffsets[index])
@@ -293,7 +389,7 @@ export function createSimulationEngine({ config, motorOffsets, state }) {
       );
       scratchTorque.y +=
         MOTOR_SPIN_DIRECTIONS[index] *
-        motorOutputs[index] *
+        droneState.motorOutputs[index] *
         config.yawTorqueFactor;
     }
 
@@ -352,13 +448,11 @@ export function createSimulationEngine({ config, motorOffsets, state }) {
       crashed = true;
     }
 
-    droneState.motorOutputs = motorOutputs;
-
     return {
       crashed,
       totalThrust,
       ...evaluateStepReward(droneState, scratchAcceleration),
-      motorOutputs
+      motorOutputs: droneState.motorOutputs
     };
   }
 
@@ -402,15 +496,13 @@ export function createSimulationEngine({ config, motorOffsets, state }) {
   }
 
   function scoreGenome(params) {
-    const starts = buildScenarioStarts();
     let totalScore = 0;
 
-    for (const start of starts) {
+    for (const start of scenarioStarts) {
       const droneState = createDroneState(start);
-      const steps = Math.floor(config.episodeDuration / config.simDt);
       let episodeScore = 0;
 
-      for (let step = 0; step < steps; step += 1) {
+      for (let step = 0; step < episodeSteps; step += 1) {
         const snapshot = simulateDroneStep(params, droneState, config.simDt);
         episodeScore += snapshot.reward;
 
@@ -430,7 +522,7 @@ export function createSimulationEngine({ config, motorOffsets, state }) {
       totalScore += episodeScore;
     }
 
-    return totalScore / starts.length;
+    return totalScore / scenarioStarts.length;
   }
 
   function trainGeneration() {
@@ -460,6 +552,7 @@ export function createSimulationEngine({ config, motorOffsets, state }) {
     if (localBestScore > state.bestScore + 0.001) {
       state.bestParams = localBest;
       state.bestScore = localBestScore;
+      state.lastImprovementAtMs = Date.now();
       state.stagnation = 0;
     } else {
       state.stagnation += 1;

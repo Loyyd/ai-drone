@@ -51,6 +51,29 @@ let targetRoamLegElapsed = 0;
 let targetRoamLegDuration = 0;
 let lastRoamWorkerSyncAt = 0;
 
+function resetBrainTrainingTimer(now = Date.now()) {
+  state.trainingTimeAccumulatedMs = 0;
+  state.trainingTimeStartedAtMs =
+    state.dronePowered && state.trainingActive ? now : null;
+}
+
+function pauseBrainTrainingTimer(now = Date.now()) {
+  if (!state.trainingTimeStartedAtMs) {
+    return;
+  }
+
+  state.trainingTimeAccumulatedMs += now - state.trainingTimeStartedAtMs;
+  state.trainingTimeStartedAtMs = null;
+}
+
+function resumeBrainTrainingTimer(now = Date.now()) {
+  if (!state.dronePowered || !state.trainingActive || state.trainingTimeStartedAtMs) {
+    return;
+  }
+
+  state.trainingTimeStartedAtMs = now;
+}
+
 const trainingWorker = new Worker(
   new URL("./app/training.worker.js", import.meta.url),
   { type: "module" }
@@ -98,6 +121,7 @@ function syncTrainingState(payload) {
   state.bestScore = payload.bestScore;
   state.generation = payload.generation;
   state.learningHistory = payload.learningHistory;
+  state.lastImprovementAtMs = payload.lastImprovementAtMs ?? state.lastImprovementAtMs;
   state.previewCandidates = payload.previewCandidates;
   state.stagnation = payload.stagnation;
   maybeDrawLearningChart();
@@ -214,7 +238,9 @@ function resetLearning(options = {}) {
   state.generation = 0;
   state.stagnation = 0;
   state.learningHistory = [];
+  state.lastImprovementAtMs = Date.now();
   state.previewCandidates = [];
+  resetBrainTrainingTimer();
 
   if (preserveCurrentPosition && state.liveDrone) {
     resetVisibleDrone({
@@ -342,6 +368,11 @@ function toggleTrainingMode() {
   }
 
   state.trainingActive = !state.trainingActive;
+  if (state.trainingActive) {
+    resumeBrainTrainingTimer();
+  } else {
+    pauseBrainTrainingTimer();
+  }
   syncUi();
   postTrainingWorker("set-training-active", {
     trainingActive: state.dronePowered && state.trainingActive
@@ -432,7 +463,20 @@ function bindControls() {
     input: ui.inputs.population,
     onInput: (value) => {
       config.population = value;
-      config.previewDroneCount = Math.min(config.population, 12);
+      syncUi();
+      postTrainingWorker("update-config", {
+        config: getConfigSnapshot()
+      });
+    },
+    value: ui.values.population,
+    valueProvider: () => config.population
+  });
+
+  bindNumericControl({
+    formatter: (value) => `${value}`,
+    input: ui.inputs.previewDroneCount,
+    onInput: (value) => {
+      config.previewDroneCount = value;
       scene.resetPreviewFleet({
         createDroneState: simulation.createDroneState,
         createSeedGenome: simulation.createSeedGenome,
@@ -445,8 +489,8 @@ function bindControls() {
         config: getConfigSnapshot()
       });
     },
-    value: ui.values.population,
-    valueProvider: () => config.population
+    value: ui.values.previewDroneCount,
+    valueProvider: () => config.previewDroneCount
   });
 
   bindNumericControl({
@@ -454,7 +498,10 @@ function bindControls() {
     input: ui.inputs.mutationScale,
     onInput: (value) => {
       config.mutationScale = value;
-      resetLearning();
+      syncUi();
+      postTrainingWorker("update-config", {
+        config: getConfigSnapshot()
+      });
     },
     value: ui.values.mutationScale,
     valueProvider: () => config.mutationScale
@@ -538,6 +585,7 @@ function bindControls() {
 
     state.dronePowered = false;
     state.trainingActive = false;
+    pauseBrainTrainingTimer();
     state.powerDropActive = true;
     state.motorOutputs = [0, 0, 0, 0];
     state.totalThrust = 0;
