@@ -54,6 +54,8 @@ function createUiReferences() {
     chartRange: document.querySelector("#chart-range-label"),
     chartLastChange: document.querySelector("#chart-last-change"),
     chartCanvas: document.querySelector("#learning-chart"),
+    recentChartRange: document.querySelector("#recent-chart-range-label"),
+    recentChartCanvas: document.querySelector("#recent-learning-chart"),
     toggleTraining: document.querySelector("#toggle-training"),
     resetLearning: document.querySelector("#reset-learning"),
     resetDrone: document.querySelector("#reset-drone"),
@@ -142,6 +144,14 @@ export function initializeDom() {
             <div class="chart-meta">
               <span class="chart-last-change" id="chart-last-change">Last change: 0s</span>
             </div>
+          </div>
+
+          <div class="chart-wrap chart-wrap-overlay chart-wrap-secondary">
+            <div class="chart-label">
+              <span>Current generation trend</span>
+              <span class="chart-range-badge chart-range-badge-inline" id="recent-chart-range-label">Starting...</span>
+            </div>
+            <canvas id="recent-learning-chart" width="320" height="120"></canvas>
           </div>
         </div>
 

@@ -365,6 +365,8 @@ select {
 }
 
 .panel {
+  display: flex;
+  flex-direction: column;
   padding: 18px 14px 20px;
   border-left: 1px solid rgba(216, 222, 232, 0.85);
   background: rgba(251, 251, 253, 0.95);
@@ -469,6 +471,7 @@ select {
 .panel-footer {
   display: flex;
   justify-content: center;
+  margin-top: auto;
   padding: 16px 4px 6px;
 }
 
@@ -511,11 +514,13 @@ select {
 }
 
 .target-field {
-  display: grid;
-  gap: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .target-field-label {
+  flex: 0 0 auto;
   font-size: 0.74rem;
   font-weight: 700;
   color: var(--muted);
@@ -525,6 +530,7 @@ select {
 
 .target-field input[type="number"] {
   width: 100%;
+  min-width: 0;
   padding: 9px 10px;
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -665,6 +671,10 @@ input[type="range"] {
   background: transparent;
 }
 
+.chart-wrap-secondary {
+  margin-top: 12px;
+}
+
 .chart-wrap canvas {
   width: 100%;
   height: 96px;
@@ -674,10 +684,16 @@ input[type="range"] {
 .chart-label {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   gap: 12px;
   margin-bottom: 6px;
   font-size: 0.74rem;
   color: var(--muted);
+}
+
+.chart-range-badge-inline {
+  padding: 4px 8px;
+  font-size: 0.68rem;
 }
 
 .chart-meta {

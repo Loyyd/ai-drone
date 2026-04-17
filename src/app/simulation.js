@@ -312,33 +312,43 @@ export function createSimulationEngine({ config, motorOffsets, state }) {
     return scratchStabilizerOutputs;
   }
 
-  function evaluateStepReward(droneState, acceleration) {
+  function evaluateStepReward(droneState, acceleration, motorOutputs) {
     const distance = droneState.position.distanceTo(config.target);
     const speed = droneState.velocity.length();
     const tilt = getTiltRadians(droneState.orientation);
     const angularSpeed = droneState.angularVelocity.length();
-    const headingAlignment = getHeadingAlignment(droneState);
-    const yawError = Math.abs(getHorizontalYawError(droneState));
+    const leftThrust = motorOutputs[0] + motorOutputs[2];
+    const rightThrust = motorOutputs[1] + motorOutputs[3];
+    const frontThrust = motorOutputs[0] + motorOutputs[1];
+    const rearThrust = motorOutputs[2] + motorOutputs[3];
+    const maxPairThrust = Math.max(config.maxMotorThrust * 2, 0.0001);
+    const rollImbalance = Math.abs(leftThrust - rightThrust) / maxPairThrust;
+    const pitchImbalance = Math.abs(frontThrust - rearThrust) / maxPairThrust;
+    const symmetryPenalty = (rollImbalance + pitchImbalance) * 0.12;
 
     let reward = 4.6;
-    reward -= distance * 1.65;
-    reward -= speed * 0.22;
-    reward -= tilt * 1.1;
-    reward -= angularSpeed * 0.18;
+    reward -= distance * 1.95;
+    reward -= speed * 0.42;
+    reward -= tilt * 1.45;
+    reward -= angularSpeed * 0.32;
     reward -= acceleration.length() * 0.02;
-    reward += headingAlignment * 0.32;
-    reward -= yawError * 0.08;
+    reward -= symmetryPenalty;
 
-    if (distance < 1.0) {
-      reward += 1.5;
+    if (distance < 0.8) {
+      reward += 1.8;
     }
 
-    if (distance < 0.45 && speed < 0.55 && tilt < 0.24) {
-      reward += 4.3;
+    if (distance < 0.45 && speed < 0.35 && tilt < 0.18) {
+      reward += 4.8;
     }
 
-    if (distance < 1.3 && headingAlignment > 0.8) {
-      reward += 0.5;
+    if (
+      distance < 0.22 &&
+      speed < 0.18 &&
+      tilt < 0.1 &&
+      angularSpeed < 0.24
+    ) {
+      reward += 8.5;
     }
 
     if (droneState.position.y <= config.groundY + 0.02) {
@@ -451,20 +461,43 @@ export function createSimulationEngine({ config, motorOffsets, state }) {
     return {
       crashed,
       totalThrust,
-      ...evaluateStepReward(droneState, scratchAcceleration),
+      ...evaluateStepReward(
+        droneState,
+        scratchAcceleration,
+        droneState.motorOutputs
+      ),
       motorOutputs: droneState.motorOutputs
     };
   }
 
   function makeStartOrientation(roll = 0, pitch = 0, yaw = 0) {
     return new THREE.Quaternion().setFromEuler(
-      new THREE.Euler(roll, yaw, pitch, "XYZ")
+      new THREE.Euler(roll, pitch, yaw, "XYZ")
     );
   }
 
   function buildScenarioStarts() {
     const spread = config.startSpread;
     const target = config.target;
+
+    if (spread <= 0.0001) {
+      return [
+        createDroneState({
+          position: target.clone(),
+          orientation: makeStartOrientation(0, 0, 0)
+        }),
+        createDroneState({
+          position: target.clone().add(new THREE.Vector3(0.08, -0.12, -0.06)),
+          velocity: new THREE.Vector3(0.03, 0, -0.02),
+          orientation: makeStartOrientation(0.03, -0.02, 0.01)
+        }),
+        createDroneState({
+          position: target.clone().add(new THREE.Vector3(-0.1, 0.1, 0.07)),
+          velocity: new THREE.Vector3(-0.02, 0.01, 0.03),
+          orientation: makeStartOrientation(-0.025, 0.015, -0.02)
+        })
+      ];
+    }
 
     return [
       createDroneState({
@@ -559,6 +592,11 @@ export function createSimulationEngine({ config, motorOffsets, state }) {
     }
 
     state.generation += 1;
+    state.recentGenerationHistory.push(localBestScore);
+
+    if (state.recentGenerationHistory.length > 100) {
+      state.recentGenerationHistory.shift();
+    }
 
     if (state.generation % 2 === 0) {
       state.learningHistory.push(state.bestScore);

@@ -43,55 +43,72 @@ export function bindNumericControl({
   });
 }
 
+function drawChart(canvas, history, options = {}) {
+  const chartContext = canvas.getContext("2d");
+
+  if (!chartContext) {
+    return;
+  }
+
+  const {
+    emptyText = "Learning curve will appear here.",
+    strokeStyle = "#1e6fd4"
+  } = options;
+  const { width, height } = canvas;
+  chartContext.clearRect(0, 0, width, height);
+
+  chartContext.fillStyle = "#ffffff";
+  chartContext.fillRect(0, 0, width, height);
+  chartContext.strokeStyle = "#e7ecf3";
+  chartContext.lineWidth = 1;
+  chartContext.beginPath();
+  chartContext.moveTo(0, height - 18);
+  chartContext.lineTo(width, height - 18);
+  chartContext.moveTo(0, 18);
+  chartContext.lineTo(width, 18);
+  chartContext.stroke();
+
+  if (history.length < 2) {
+    chartContext.fillStyle = "#7b8797";
+    chartContext.font = '12px "Avenir Next", "Segoe UI", sans-serif';
+    chartContext.fillText(emptyText, 18, height / 2);
+    return;
+  }
+
+  const min = Math.min(...history);
+  const max = Math.max(...history);
+  const range = Math.max(max - min, 1);
+
+  chartContext.strokeStyle = strokeStyle;
+  chartContext.lineWidth = 2.5;
+  chartContext.beginPath();
+
+  history.forEach((value, index) => {
+    const x = (index / (history.length - 1)) * (width - 24) + 12;
+    const y = height - 18 - ((value - min) / range) * (height - 36);
+
+    if (index === 0) {
+      chartContext.moveTo(x, y);
+    } else {
+      chartContext.lineTo(x, y);
+    }
+  });
+
+  chartContext.stroke();
+  chartContext.fillStyle = "#7b8797";
+  chartContext.font = '12px "Avenir Next", "Segoe UI", sans-serif';
+  chartContext.fillText(`min ${min.toFixed(1)}`, 12, height - 4);
+  chartContext.fillText(`max ${max.toFixed(1)}`, width - 64, 14);
+}
+
 export function createLearningChart(ui) {
-  const chartContext = ui.chartCanvas.getContext("2d");
-
-  return function drawLearningChart(history) {
-    const { width, height } = ui.chartCanvas;
-    chartContext.clearRect(0, 0, width, height);
-
-    chartContext.fillStyle = "#ffffff";
-    chartContext.fillRect(0, 0, width, height);
-    chartContext.strokeStyle = "#e7ecf3";
-    chartContext.lineWidth = 1;
-    chartContext.beginPath();
-    chartContext.moveTo(0, height - 18);
-    chartContext.lineTo(width, height - 18);
-    chartContext.moveTo(0, 18);
-    chartContext.lineTo(width, 18);
-    chartContext.stroke();
-
-    if (history.length < 2) {
-      chartContext.fillStyle = "#7b8797";
-      chartContext.font = '12px "Avenir Next", "Segoe UI", sans-serif';
-      chartContext.fillText("Learning curve will appear here.", 18, height / 2);
+  return function drawLearningChart(canvasOrHistory, maybeHistory, options) {
+    if (Array.isArray(canvasOrHistory)) {
+      drawChart(ui.chartCanvas, canvasOrHistory, maybeHistory);
       return;
     }
 
-    const min = Math.min(...history);
-    const max = Math.max(...history);
-    const range = Math.max(max - min, 1);
-
-    chartContext.strokeStyle = "#1e6fd4";
-    chartContext.lineWidth = 2.5;
-    chartContext.beginPath();
-
-    history.forEach((value, index) => {
-      const x = (index / (history.length - 1)) * (width - 24) + 12;
-      const y = height - 18 - ((value - min) / range) * (height - 36);
-
-      if (index === 0) {
-        chartContext.moveTo(x, y);
-      } else {
-        chartContext.lineTo(x, y);
-      }
-    });
-
-    chartContext.stroke();
-    chartContext.fillStyle = "#7b8797";
-    chartContext.font = '12px "Avenir Next", "Segoe UI", sans-serif';
-    chartContext.fillText(`min ${min.toFixed(1)}`, 12, height - 4);
-    chartContext.fillText(`max ${max.toFixed(1)}`, width - 64, 14);
+    drawChart(canvasOrHistory, maybeHistory ?? [], options);
   };
 }
 
@@ -183,6 +200,10 @@ export function updateUi({
   ui.chartRange.textContent =
     state.learningHistory.length > 0
       ? `${state.learningHistory.length} samples`
+      : "Starting...";
+  ui.recentChartRange.textContent =
+    state.recentGenerationHistory.length > 0
+      ? `Last ${state.recentGenerationHistory.length} generations`
       : "Starting...";
   ui.chartLastChange.textContent = `Last change: ${formatElapsedCompact(
     state.lastImprovementAtMs ? Date.now() - state.lastImprovementAtMs : 0

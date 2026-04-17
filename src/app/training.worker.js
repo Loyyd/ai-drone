@@ -49,6 +49,7 @@ function postTrainingState() {
       bestScore: state.bestScore,
       generation: state.generation,
       learningHistory: [...state.learningHistory],
+      recentGenerationHistory: [...state.recentGenerationHistory],
       lastImprovementAtMs: state.lastImprovementAtMs ?? lastImprovementAtMs,
       previewCandidates: state.previewCandidates,
       revision,
@@ -66,6 +67,7 @@ function resetLearning() {
   state.generation = 0;
   state.stagnation = 0;
   state.learningHistory = [];
+  state.recentGenerationHistory = [];
   state.previewCandidates = Array.from(
     { length: config.previewDroneCount },
     (_, index) =>

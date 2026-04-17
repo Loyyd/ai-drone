@@ -689,6 +689,18 @@ export function createSceneController({ clamp, config, state, viewport }) {
     return true;
   }
 
+  function createMotorArrows(propellers, parent) {
+    propellers.forEach((propeller) => {
+      const arrowDir = new THREE.Vector3(0, -1, 0);
+      const arrowOrigin = new THREE.Vector3(0, 0, 0);
+      const arrowLength = 0.6;
+      const arrowColor = 0x0066ff;
+      
+      const arrow = new THREE.ArrowHelper(arrowDir, arrowOrigin, arrowLength, arrowColor, 0.2, 0.15);
+      propeller.add(arrow);
+    });
+  }
+
   async function initialize() {
     await loadThreeExtras();
 
@@ -703,6 +715,7 @@ export function createSceneController({ clamp, config, state, viewport }) {
     mainPropellers = droneData.propellers;
     setupMainDroneAnimations();
     scene.add(mainDrone);
+    createMotorArrows(mainPropellers, mainDrone);
   }
 
   function buildPreviewFleet({

@@ -40,6 +40,8 @@ const UI_REFRESH_INTERVAL = 1000 / 12;
 let lastUiRenderAt = 0;
 let lastChartLength = -1;
 let lastChartTail = Number.NaN;
+let lastRecentChartLength = -1;
+let lastRecentChartTail = Number.NaN;
 let latestTrainingRevision = 0;
 let lastFrameAt = 0;
 let powerOnTimeoutId = null;
@@ -121,6 +123,7 @@ function syncTrainingState(payload) {
   state.bestScore = payload.bestScore;
   state.generation = payload.generation;
   state.learningHistory = payload.learningHistory;
+  state.recentGenerationHistory = payload.recentGenerationHistory;
   state.lastImprovementAtMs = payload.lastImprovementAtMs ?? state.lastImprovementAtMs;
   state.previewCandidates = payload.previewCandidates;
   state.stagnation = payload.stagnation;
@@ -165,18 +168,31 @@ function maybeDrawLearningChart(force = false) {
   const nextLength = state.learningHistory.length;
   const nextTail =
     nextLength > 0 ? state.learningHistory[nextLength - 1] : Number.NaN;
+  const nextRecentLength = state.recentGenerationHistory.length;
+  const nextRecentTail =
+    nextRecentLength > 0
+      ? state.recentGenerationHistory[nextRecentLength - 1]
+      : Number.NaN;
 
   if (
     !force &&
     nextLength === lastChartLength &&
-    Object.is(nextTail, lastChartTail)
+    Object.is(nextTail, lastChartTail) &&
+    nextRecentLength === lastRecentChartLength &&
+    Object.is(nextRecentTail, lastRecentChartTail)
   ) {
     return;
   }
 
   drawLearningChart(state.learningHistory);
+  drawLearningChart(ui.recentChartCanvas, state.recentGenerationHistory, {
+    emptyText: "Recent generations will appear here.",
+    strokeStyle: "#2f9d69"
+  });
   lastChartLength = nextLength;
   lastChartTail = nextTail;
+  lastRecentChartLength = nextRecentLength;
+  lastRecentChartTail = nextRecentTail;
 }
 
 function resetVisibleDrone(overrides = {}) {
@@ -238,6 +254,7 @@ function resetLearning(options = {}) {
   state.generation = 0;
   state.stagnation = 0;
   state.learningHistory = [];
+  state.recentGenerationHistory = [];
   state.lastImprovementAtMs = Date.now();
   state.previewCandidates = [];
   resetBrainTrainingTimer();

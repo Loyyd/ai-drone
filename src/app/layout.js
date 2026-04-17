@@ -5,6 +5,18 @@ export function setupLayoutInteractions({
   ui,
   viewport
 }) {
+  function cardsOverlap(firstCard, secondCard, gap = 12) {
+    const firstRect = firstCard.getBoundingClientRect();
+    const secondRect = secondCard.getBoundingClientRect();
+
+    return !(
+      firstRect.right + gap <= secondRect.left ||
+      secondRect.right + gap <= firstRect.left ||
+      firstRect.bottom + gap <= secondRect.top ||
+      secondRect.bottom + gap <= firstRect.top
+    );
+  }
+
   function applyOverlayPosition(card, position) {
     const viewportRect = viewport.getBoundingClientRect();
     const cardRect = card.getBoundingClientRect();
@@ -29,6 +41,14 @@ export function setupLayoutInteractions({
 
     applyOverlayPosition(ui.learningCard, state.learningCardPosition);
     applyOverlayPosition(ui.hudCard, state.hudPosition);
+
+    if (cardsOverlap(ui.learningCard, ui.hudCard)) {
+      const learningRect = ui.learningCard.getBoundingClientRect();
+      const viewportRect = viewport.getBoundingClientRect();
+      state.hudPosition.top =
+        learningRect.bottom - viewportRect.top + 12;
+      applyOverlayPosition(ui.hudCard, state.hudPosition);
+    }
   }
 
   function applyPanelWidth() {
