@@ -561,6 +561,13 @@ function bindControls() {
     syncUi();
   });
 
+  ui.performanceToggle.addEventListener("change", async () => {
+    state.performanceMode = ui.performanceToggle.checked;
+    syncUi();
+    await scene.setPerformanceMode(state.performanceMode);
+    applyHudPosition();
+  });
+
   ui.resetLearning.addEventListener("click", () => {
     resetLearning();
   });

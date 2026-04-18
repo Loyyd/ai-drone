@@ -2,6 +2,7 @@ import powerButtonImage from "../assets/power-button.png";
 import propellerImage from "../assets/propeller.png";
 import axisImage from "../assets/axis.png";
 import droneImage from "../../drone.png";
+import performanceImage from "../../performance.svg";
 
 import { OUTPUT_SIZE } from "./constants.js";
 
@@ -34,6 +35,7 @@ function createUiReferences() {
     powerButton: document.querySelector("#power-button"),
     modeSwitch: document.querySelector("#mode-switch"),
     gizmoToggle: document.querySelector("#gizmo-toggle"),
+    performanceToggle: document.querySelector("#performance-toggle"),
     learningCard: document.querySelector("#learning-card"),
     learningCardDragHandle: document.querySelector("#learning-card-drag-handle"),
     hudCard: document.querySelector("#hud-card"),
@@ -125,6 +127,16 @@ export function initializeDom() {
 
         <label class="gizmo-toggle" for="gizmo-toggle" style="--axis-toggle-image: url('${axisImage}')">
           <input class="gizmo-toggle-checkbox" id="gizmo-toggle" type="checkbox" checked />
+          <span class="gizmo-toggle-icon" aria-hidden="true"></span>
+        </label>
+
+        <label
+          class="gizmo-toggle gizmo-toggle-secondary"
+          for="performance-toggle"
+          aria-label="Performance Mode"
+          style="--axis-toggle-image: url('${performanceImage}')"
+        >
+          <input class="gizmo-toggle-checkbox" id="performance-toggle" type="checkbox" />
           <span class="gizmo-toggle-icon" aria-hidden="true"></span>
         </label>
 

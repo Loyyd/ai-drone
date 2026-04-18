@@ -65,6 +65,7 @@ export function createInitialState() {
     trailPoints: [],
     lastTrailPoint: null,
     showTargetGizmo: true,
+    performanceMode: false,
     learningCardPosition: { left: 12, top: 12 },
     learningCardDragging: false,
     learningCardDragPointerId: null,

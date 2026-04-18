@@ -211,6 +211,10 @@ select {
   box-shadow: 0 16px 36px rgba(30, 111, 212, 0.14);
 }
 
+.gizmo-toggle-secondary {
+  top: 124px;
+}
+
 .gizmo-toggle-checkbox {
   margin: 0;
   width: 16px;
@@ -239,6 +243,14 @@ select {
   transition: background 160ms ease, opacity 160ms ease;
 }
 
+.gizmo-toggle-label {
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
 .gizmo-toggle:has(.gizmo-toggle-checkbox:checked) {
   border-color: rgba(30, 111, 212, 0.34);
   background: rgba(239, 245, 255, 0.98);
@@ -246,6 +258,10 @@ select {
 
 .gizmo-toggle:has(.gizmo-toggle-checkbox:checked) .gizmo-toggle-icon {
   background: #1e6fd4;
+}
+
+.gizmo-toggle:has(.gizmo-toggle-checkbox:checked) .gizmo-toggle-label {
+  color: #155aa9;
 }
 
 .overlay-card {
@@ -828,6 +844,11 @@ input[type="range"] {
 
   .gizmo-toggle {
     top: 70px;
+    right: 14px;
+  }
+
+  .gizmo-toggle-secondary {
+    top: 120px;
     right: 14px;
   }
 

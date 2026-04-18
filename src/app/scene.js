@@ -208,6 +208,7 @@ export function createSceneController({ clamp, config, state, viewport }) {
   let transformHelper = null;
   let droneGltf = null;
   let gltfLoader = null;
+  let currentDroneAssetPath = "/drone.glb";
   let mainDrone = null;
   let mainPropellers = [];
   let mainDroneMixer = null;
@@ -419,12 +420,24 @@ export function createSceneController({ clamp, config, state, viewport }) {
     setupControls();
   }
 
-  function loadDroneModel() {
+  function getDroneAssetPath() {
+    return state.performanceMode ? "/droneLOD.glb" : "/drone.glb";
+  }
+
+  function loadDroneModel(forceReload = false) {
     return new Promise((resolve, reject) => {
+      const nextAssetPath = getDroneAssetPath();
+
+      if (!forceReload && droneGltf && currentDroneAssetPath === nextAssetPath) {
+        resolve(droneGltf);
+        return;
+      }
+
       gltfLoader.load(
-        "/drone.glb",
+        nextAssetPath,
         (gltf) => {
           droneGltf = gltf;
+          currentDroneAssetPath = nextAssetPath;
           console.log("✓ Drone model loaded successfully");
 
           const foundObjects = [];
@@ -587,6 +600,7 @@ export function createSceneController({ clamp, config, state, viewport }) {
     }
 
     const drone = droneGltf.scene.clone();
+    drone.userData.droneAssetPath = currentDroneAssetPath;
 
     drone.traverse((child) => {
       if (!child.isMesh) {
@@ -647,6 +661,37 @@ export function createSceneController({ clamp, config, state, viewport }) {
     droneGltf.animations.forEach((clip) => {
       mainDroneActions.set(clip.name, mainDroneMixer.clipAction(clip));
     });
+  }
+
+  function removeDroneVisual(drone) {
+    if (!drone) {
+      return;
+    }
+
+    if (mainDroneMixer) {
+      mainDroneMixer.stopAllAction();
+      mainDroneMixer.uncacheRoot(drone);
+    }
+
+    drone.removeFromParent();
+  }
+
+  function clearStaleDroneVisuals() {
+    scene.children
+      .filter((child) => child.userData?.droneAssetPath)
+      .forEach((child) => {
+        if (child !== mainDrone) {
+          child.removeFromParent();
+        }
+      });
+
+    previewFleetGroup.children
+      .filter((child) => child.userData?.droneAssetPath)
+      .forEach((child) => {
+        if (!state.previewFleet.some((preview) => preview.group === child)) {
+          child.removeFromParent();
+        }
+      });
   }
 
   function findMainDroneAnimation(name) {
@@ -716,6 +761,66 @@ export function createSceneController({ clamp, config, state, viewport }) {
     setupMainDroneAnimations();
     scene.add(mainDrone);
     createMotorArrows(mainPropellers, mainDrone);
+  }
+
+  function rebuildDroneVisuals() {
+    removeDroneVisual(mainDrone);
+    mainDrone = null;
+    mainPropellers = [];
+    mainDroneMixer = null;
+    mainDroneActions = new Map();
+
+    const mainDroneData = createDrone();
+    mainDrone = mainDroneData.drone;
+    mainPropellers = mainDroneData.propellers;
+    setupMainDroneAnimations();
+
+    if (state.liveDrone) {
+      mainDrone.position.copy(state.liveDrone.position);
+      mainDrone.quaternion.copy(state.liveDrone.orientation);
+      applyPropellerRotation(
+        mainPropellers,
+        state.propellerSpin,
+        state.liveDrone.motorOutputs
+      );
+    }
+
+    scene.add(mainDrone);
+    createMotorArrows(mainPropellers, mainDrone);
+
+    state.previewFleet.forEach((preview) => {
+      previewFleetGroup.remove(preview.group);
+
+      const previewDroneData = createDrone({
+        opacity: 0.36,
+        scale: 0.72
+      });
+      preview.group = previewDroneData.drone;
+      preview.propellers = previewDroneData.propellers;
+      preview.group.position.copy(preview.droneState.position);
+      preview.group.quaternion.copy(preview.droneState.orientation);
+      preview.group.visible = state.dronePowered && state.trainingActive;
+      applyPropellerRotation(
+        preview.propellers,
+        preview.propellerSpin,
+        preview.droneState.motorOutputs,
+        { enableBlur: false }
+      );
+      previewFleetGroup.add(preview.group);
+    });
+
+    clearStaleDroneVisuals();
+  }
+
+  async function setPerformanceMode(enabled) {
+    state.performanceMode = enabled;
+
+    try {
+      await loadDroneModel(true);
+      rebuildDroneVisuals();
+    } catch (error) {
+      console.error("Failed to switch drone model:", error);
+    }
   }
 
   function buildPreviewFleet({
@@ -1005,6 +1110,7 @@ export function createSceneController({ clamp, config, state, viewport }) {
     resetTrailHistory,
     resize,
     sampleTrailPoint,
+    setPerformanceMode,
     setTargetHandlers,
     stepPreviewFleet,
     updateAnimations,

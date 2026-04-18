@@ -155,6 +155,7 @@ export function updateUi({
       ? "Training Mode"
       : "Simulation Mode";
   ui.gizmoToggle.checked = state.showTargetGizmo;
+  ui.performanceToggle.checked = state.performanceMode;
   ui.trainingStatus.textContent = !state.dronePowered
     ? "Off"
     : state.trainingActive
